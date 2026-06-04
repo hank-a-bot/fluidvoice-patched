@@ -6,7 +6,7 @@ extension SettingsStore {
 
         var id: String { self.rawValue }
 
-        init(rawValue: String) {
+        nonisolated init(rawValue: String) {
             self.rawValue = rawValue
         }
 
@@ -23,14 +23,15 @@ extension SettingsStore {
         static let english = Self(rawValue: "en")
 
         static let allCases: [Self] = [
-            "auto", "en", "es", "fr", "it", "pt", "ru", "nl", "de-DE", "pl",
-            "cs", "da", "el", "fi", "hu", "ro", "sv", "bg", "et", "hr",
-            "lt", "lv", "mt-MT", "sk", "sl", "uk", "ar", "hi", "zh-CN", "ja-JP",
-            "ko", "vi-VN", "he-IL", "tr", "nb-NO", "th-TH",
+            "auto", "es", "it", "pt", "hi", "ko", "en", "de-DE", "fr", "ru",
+            "tr", "vi-VN", "nl", "ja-JP", "ar", "uk", "pl", "nb-NO", "fi",
+            "zh-CN", "cs", "bg", "sk", "sv", "hr", "ro", "et", "da", "hu",
+            "el-GR", "he-IL", "lt-LT", "sl-SI", "lv-LV", "mt-MT", "th-TH", "nn-NO",
         ].map(Self.init(rawValue:))
 
         static func supportedLanguage(rawValue: String) -> Self? {
-            self.allCases.first { $0.rawValue == rawValue }
+            let mappedValue = self.legacyRawValueMap[rawValue] ?? rawValue
+            return self.allCases.first { $0.rawValue == mappedValue }
         }
 
         var displayName: String {
@@ -49,41 +50,49 @@ extension SettingsStore {
 
         private static let displayNames: [String: String] = [
             "auto": "Auto Detect",
-            "en": "English (en)",
-            "es": "Spanish (es)",
-            "fr": "French (fr)",
-            "it": "Italian (it)",
-            "pt": "Portuguese (pt)",
-            "ru": "Russian (ru)",
-            "nl": "Dutch (nl)",
+            "es": "Spanish (es-US, es-ES)",
+            "it": "Italian (it-IT)",
+            "pt": "Portuguese (pt-BR, pt-PT)",
+            "hi": "Hindi (hi-IN)",
+            "ko": "Korean (ko-KR)",
+            "en": "English (en-US, en-GB)",
             "de-DE": "German (de-DE)",
-            "pl": "Polish (pl)",
-            "cs": "Czech (cs)",
-            "da": "Danish (da)",
-            "el": "Greek (el)",
-            "fi": "Finnish (fi)",
-            "hu": "Hungarian (hu)",
-            "ro": "Romanian (ro)",
-            "sv": "Swedish (sv)",
-            "bg": "Bulgarian (bg)",
-            "et": "Estonian (et)",
-            "hr": "Croatian (hr)",
-            "lt": "Lithuanian (lt)",
-            "lv": "Latvian (lv)",
-            "mt-MT": "Maltese (mt)",
-            "sk": "Slovak (sk)",
-            "sl": "Slovenian (sl)",
+            "fr": "French (fr-FR, fr-CA)",
+            "ru": "Russian (ru-RU)",
+            "tr": "Turkish (tr-TR)",
+            "vi-VN": "Vietnamese (vi-VN)",
+            "nl": "Dutch (nl-NL)",
+            "ja-JP": "Japanese (ja-JP)",
+            "ar": "Arabic (ar-AR)",
             "uk": "Ukrainian (uk)",
-            "ar": "Arabic (ar)",
-            "hi": "Hindi (hi)",
-            "zh-CN": "Chinese (zh-CN)",
-            "ja-JP": "Japanese (ja)",
-            "ko": "Korean (ko)",
-            "vi-VN": "Vietnamese (vi)",
-            "he-IL": "Hebrew (he)",
-            "tr": "Turkish (tr)",
-            "nb-NO": "Norwegian (nb_no)",
-            "th-TH": "Thai (th)",
+            "pl": "Polish (pl-PL) - Alpha",
+            "nb-NO": "Norwegian Bokmal (nb-NO) - Alpha",
+            "fi": "Finnish (fi-FI) - Alpha",
+            "zh-CN": "Mandarin (zh-CN) - Alpha",
+            "cs": "Czech (cs-CZ) - Alpha",
+            "bg": "Bulgarian (bg-BG) - Alpha",
+            "sk": "Slovak (sk-SK) - Alpha",
+            "sv": "Swedish (sv-SE) - Alpha",
+            "hr": "Croatian (hr-HR) - Alpha",
+            "ro": "Romanian (ro-RO) - Alpha",
+            "et": "Estonian (et-EE) - Alpha",
+            "da": "Danish (da-DK) - Alpha",
+            "hu": "Hungarian (hu-HU) - Alpha",
+            "el-GR": "Greek (el-GR) - Experimental",
+            "he-IL": "Hebrew (he-IL) - Experimental",
+            "lt-LT": "Lithuanian (lt-LT) - Experimental",
+            "sl-SI": "Slovenian (sl-SI) - Experimental",
+            "lv-LV": "Latvian (lv-LV) - Experimental",
+            "mt-MT": "Maltese (mt-MT) - Experimental",
+            "th-TH": "Thai (th-TH) - Experimental",
+            "nn-NO": "Norwegian Nynorsk (nn-NO) - Experimental",
+        ]
+
+        private static let legacyRawValueMap: [String: String] = [
+            "el": "el-GR",
+            "lt": "lt-LT",
+            "lv": "lv-LV",
+            "sl": "sl-SI",
         ]
 
         private static func normalizedIdentifier(_ identifier: String) -> String {

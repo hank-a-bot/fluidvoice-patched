@@ -3100,11 +3100,11 @@ final class SettingsStore: ObservableObject {
             case .cohereTranscribeSixBit:
                 return "High-accuracy multilingual transcription. Select the language manually before dictation for best results."
             case .nemotronOffline:
-                return "Slower but more accurate NVIDIA Nemotron 3.5 multilingual transcription. Supports around 40 languages with auto or manual language selection."
+                return "Slower but more accurate NVIDIA Nemotron 3.5 transcription. Supports 40 language-locales with auto or manual language selection."
             case .nemotronStreaming:
-                return "NVIDIA Nemotron 3.5 streaming-capable transcription. Supports around 40 languages with auto or manual language selection."
+                return "NVIDIA Nemotron 3.5 streaming-capable transcription. Supports 40 language-locales with auto or manual language selection."
             case .nemotronStreaming320:
-                return "NVIDIA Nemotron 3.5 streaming-capable transcription. Supports around 40 languages with auto or manual language selection."
+                return "NVIDIA Nemotron 3.5 streaming-capable transcription. Supports 40 language-locales with auto or manual language selection."
             case .appleSpeech:
                 return "Built-in macOS speech recognition. No download required."
             case .appleSpeechAnalyzer:
@@ -3761,6 +3761,8 @@ extension SettingsStore.SpeechModel {
             return "EN"
         case .cohereTranscribeSixBit:
             return "AR, DE, EL, EN, ES, FR, IT, JA, KO, NL, PL, PT, VI, ZH"
+        case .nemotronOffline, .nemotronStreaming, .nemotronStreaming320:
+            return "40 language-locales"
         case .appleSpeechAnalyzer:
             return "EN, ES, FR, DE, IT, JA, KO, PT, ZH"
         default:
@@ -3776,6 +3778,10 @@ extension SettingsStore.SpeechModel {
             """
         case .cohereTranscribeSixBit:
             return "Arabic, German, Greek, English, Spanish, French, Italian, Japanese, Korean, Dutch, Polish, Portuguese, Vietnamese, and Mandarin Chinese"
+        case .nemotronOffline, .nemotronStreaming, .nemotronStreaming320:
+            return "Spanish, Italian, Portuguese, Hindi, Korean, English, German, French, Russian, Turkish, Vietnamese, Dutch, Japanese, Arabic, " +
+                "Ukrainian; Polish, Norwegian Bokmal, Finnish, Mandarin, Czech, Bulgarian, Slovak, Swedish, Croatian, Romanian, Estonian, " +
+                "Danish, and Hungarian are Alpha; Greek, Hebrew, Lithuanian, Slovenian, Latvian, Maltese, Thai, and Norwegian Nynorsk are Experimental."
         default:
             return nil
         }
