@@ -3100,7 +3100,7 @@ final class SettingsStore: ObservableObject {
             case .cohereTranscribeSixBit:
                 return "High-accuracy multilingual transcription. Select the language manually before dictation for best results."
             case .nemotronOffline:
-                return "NVIDIA Nemotron 3.5 multilingual transcription. Supports around 40 languages with auto or manual language selection."
+                return "Slower but more accurate NVIDIA Nemotron 3.5 multilingual transcription. Supports around 40 languages with auto or manual language selection."
             case .nemotronStreaming:
                 return "NVIDIA Nemotron 3.5 streaming-capable transcription. Supports around 40 languages with auto or manual language selection."
             case .nemotronStreaming320:
@@ -3219,7 +3219,7 @@ final class SettingsStore: ObservableObject {
             case .qwen3Asr: return 0.45
             case .cohereTranscribeSixBit: return 0.85
             case .nemotronOffline: return 0.85
-            case .nemotronStreaming, .nemotronStreaming320: return 0.88
+            case .nemotronStreaming, .nemotronStreaming320: return 0.99
             case .appleSpeech: return 0.60
             case .appleSpeechAnalyzer: return 0.85
             case .whisperTiny: return 0.90
@@ -3239,8 +3239,8 @@ final class SettingsStore: ObservableObject {
             case .parakeetRealtime: return 0.75
             case .qwen3Asr: return 0.90
             case .cohereTranscribeSixBit: return 0.98
-            case .nemotronOffline: return 0.92
-            case .nemotronStreaming, .nemotronStreaming320: return 0.88
+            case .nemotronOffline: return 0.90
+            case .nemotronStreaming, .nemotronStreaming320: return 0.85
             case .appleSpeech: return 0.60
             case .appleSpeechAnalyzer: return 0.80
             case .whisperTiny: return 0.40
