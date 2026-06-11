@@ -1203,6 +1203,8 @@ final class ASRService: ObservableObject {
             )
         }
 
+        let estimatedSamples = try LocalAPIAudioDecoder.validateDurationWithinLimit(for: fileURL)
+
         try await self.ensureAsrReady()
         let provider = self.transcriptionProvider
         guard provider.isReady else {
@@ -1213,7 +1215,6 @@ final class ASRService: ObservableObject {
             )
         }
 
-        let estimatedSamples = Self.estimatedMono16kSampleCount(for: fileURL)
         guard provider.prefersNativeFileTranscription else {
             let samples = try LocalAPIAudioDecoder.samples(from: fileURL)
             let result = try await self.transcribeSamplesForAPI(samples)
@@ -1232,16 +1233,6 @@ final class ASRService: ObservableObject {
         let cleanedText = ASRService.applyCustomDictionary(ASRService.removeFillerWords(result.text))
         self.recordWordBoostHitIfAny(transcribedText: cleanedText)
         return (ASRTranscriptionResult(text: cleanedText, confidence: result.confidence), estimatedSamples)
-    }
-
-    private static func estimatedMono16kSampleCount(for fileURL: URL) -> Int {
-        guard
-            let file = try? AVAudioFile(forReading: fileURL),
-            file.processingFormat.sampleRate > 0
-        else {
-            return 0
-        }
-        return Int((Double(file.length) * 16_000.0 / file.processingFormat.sampleRate).rounded())
     }
 
     func stopWithoutTranscription() async {

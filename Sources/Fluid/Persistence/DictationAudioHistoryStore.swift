@@ -74,7 +74,7 @@ final nonisolated class DictationAudioHistoryStore: @unchecked Sendable {
 
     func audioFileURL(for entry: TranscriptionHistoryEntry) -> URL? {
         guard let audio = entry.audio else { return nil }
-        return try? self.audioDirectory(createIfNeeded: false).appendingPathComponent(audio.fileName, isDirectory: false)
+        return self.audioFileURL(fileName: audio.fileName, createIfNeeded: false)
     }
 
     func audioFileExists(for entry: TranscriptionHistoryEntry) -> Bool {
@@ -84,7 +84,7 @@ final nonisolated class DictationAudioHistoryStore: @unchecked Sendable {
 
     @discardableResult
     func deleteAudio(fileName: String) -> Int64 {
-        guard let url = try? self.audioDirectory(createIfNeeded: false).appendingPathComponent(fileName, isDirectory: false) else {
+        guard let url = self.audioFileURL(fileName: fileName, createIfNeeded: false) else {
             return 0
         }
 
@@ -259,6 +259,31 @@ final nonisolated class DictationAudioHistoryStore: @unchecked Sendable {
             try self.fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         return directory
+    }
+
+    private func audioFileURL(fileName: String, createIfNeeded: Bool) -> URL? {
+        guard let safeFileName = self.safeAudioFileName(fileName),
+              let directory = try? self.audioDirectory(createIfNeeded: createIfNeeded)
+        else {
+            return nil
+        }
+        return directory.appendingPathComponent(safeFileName, isDirectory: false)
+    }
+
+    private func safeAudioFileName(_ fileName: String) -> String? {
+        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let lastPathComponent = URL(fileURLWithPath: trimmed).lastPathComponent
+        guard trimmed == lastPathComponent,
+              lastPathComponent != ".",
+              lastPathComponent != "..",
+              URL(fileURLWithPath: lastPathComponent).pathExtension.lowercased() == "wav"
+        else {
+            return nil
+        }
+
+        return lastPathComponent
     }
 
     private func audioFileName(entryID: UUID, timestamp: Date) -> String {

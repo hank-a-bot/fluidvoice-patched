@@ -3,7 +3,7 @@ import Foundation
 
 enum LocalAPIAudioDecoder {
     static let sampleRate: Double = 16_000
-    private static let maxDurationSeconds: Double = 300
+    static let maxDurationSeconds: Double = 300
 
     static func samples(from fileURL: URL) throws -> [Float] {
         let file = try AVAudioFile(forReading: fileURL)
@@ -33,6 +33,25 @@ enum LocalAPIAudioDecoder {
         try data.write(to: url, options: .atomic)
         defer { try? FileManager.default.removeItem(at: url) }
         return try self.samples(from: url)
+    }
+
+    static func validateDurationWithinLimit(for fileURL: URL) throws -> Int {
+        let file = try AVAudioFile(forReading: fileURL)
+        let sourceFormat = file.processingFormat
+        guard sourceFormat.sampleRate > 0 else {
+            throw NSError(domain: "LocalAPIAudioDecoder", code: -6, userInfo: [NSLocalizedDescriptionKey: "Audio file has an invalid sample rate."])
+        }
+
+        let maxFrames = AVAudioFramePosition(sourceFormat.sampleRate * self.maxDurationSeconds)
+        guard file.length <= maxFrames else {
+            throw NSError(
+                domain: "LocalAPIAudioDecoder",
+                code: -5,
+                userInfo: [NSLocalizedDescriptionKey: "Audio file exceeds the \(Int(self.maxDurationSeconds)) second API limit."]
+            )
+        }
+
+        return Int((Double(file.length) * self.sampleRate / sourceFormat.sampleRate).rounded())
     }
 
     private static func convertToMono16k(_ sourceBuffer: AVAudioPCMBuffer) throws -> [Float] {
