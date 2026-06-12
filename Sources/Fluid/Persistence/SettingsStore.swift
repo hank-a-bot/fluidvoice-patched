@@ -1100,6 +1100,22 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// Show the main window when macOS launches FluidVoice at login (default: ON, matching
+    /// current behavior). When off, login launches boot silently in the menu bar. Manual
+    /// launches always show the window. Default-true semantics so existing installs keep
+    /// their current behavior.
+    var showMainWindowAtLoginLaunch: Bool {
+        get {
+            let value = self.defaults.object(forKey: Keys.showMainWindowAtLoginLaunch)
+            if value == nil { return true }
+            return self.defaults.bool(forKey: Keys.showMainWindowAtLoginLaunch)
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.showMainWindowAtLoginLaunch)
+        }
+    }
+
     /// Anonymous analytics toggle (default: ON). Uses default-true semantics so existing installs
     /// upgrading to a version that includes analytics do not silently default to OFF.
     var shareAnonymousAnalytics: Bool {
@@ -3625,6 +3641,7 @@ private extension SettingsStore {
     /// Keys
     enum Keys {
         static let enableAIProcessing = "EnableAIProcessing"
+        static let showMainWindowAtLoginLaunch = "ShowMainWindowAtLoginLaunch"
         static let dictationPromptOff = "DictationPromptOff"
         static let enableDebugLogs = "EnableDebugLogs"
         static let availableAIModels = "AvailableAIModels"

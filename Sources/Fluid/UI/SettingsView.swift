@@ -214,6 +214,17 @@ struct SettingsView: View {
                             )
                             Divider().opacity(0.2)
 
+                            // Show window when launched at login
+                            self.settingsToggleRow(
+                                title: "Show window when launched at login",
+                                description: "When off, FluidVoice starts silently in the menu bar at login. Opening the app yourself always shows the window.",
+                                isOn: Binding(
+                                    get: { SettingsStore.shared.showMainWindowAtLoginLaunch },
+                                    set: { SettingsStore.shared.showMainWindowAtLoginLaunch = $0 }
+                                )
+                            )
+                            Divider().opacity(0.2)
+
                             // Hide from Dock & App Switcher
                             self.settingsToggleRow(
                                 title: "Hide from Dock & App Switcher",

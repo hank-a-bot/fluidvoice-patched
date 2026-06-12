@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Carbon
 import PromiseKit
 import SwiftUI
 import UserNotifications
@@ -14,11 +15,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var updateCheckTimer: Timer?
     private var didRevealMainWindowOnLaunch = false
     private var didRequestMainWindowReopen = false
+    private var wasLaunchedAsLoginItem = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Bring up file logging + crash handlers immediately during launch.
         _ = FileLogger.shared
-        DebugLogger.shared.info("Application launched", source: "AppDelegate")
+        // Must be read during the launch callback - the current Apple Event identifies
+        // login-item launches (used to optionally start silently, see issue #369).
+        self.wasLaunchedAsLoginItem = Self.detectLoginItemLaunch()
+        DebugLogger.shared.info(
+            "Application launched [loginItemLaunch=\(self.wasLaunchedAsLoginItem)]",
+            source: "AppDelegate"
+        )
         UNUserNotificationCenter.current().delegate = self
 
         // Initialize app settings (dock visibility, etc.)
@@ -97,36 +105,85 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         completionHandler()
     }
 
+    /// Whether this launch came from macOS Login Items. Reads the launch Apple Event,
+    /// which is only valid during applicationDidFinishLaunching.
+    /// FLUID_SIMULATE_LOGIN_LAUNCH=1 forces this on for testing, since real login-item
+    /// launches can only be produced by logging in.
+    private static func detectLoginItemLaunch() -> Bool {
+        if ProcessInfo.processInfo.environment["FLUID_SIMULATE_LOGIN_LAUNCH"] == "1" {
+            return true
+        }
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventID == AEEventID(kAEOpenApplication)
+            && event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
+            == OSType(keyAELaunchedAsLogInItem)
+    }
+
     private func openMainWindowOnLaunch() {
         NSApp.setActivationPolicy(SettingsStore.shared.showInDock ? .regular : .accessory)
+
+        // Users can opt out of showing the window for login-item launches (#369).
+        // The window must still be CREATED either way - ContentView's appearance
+        // bootstraps the menu bar and services - so the silent path realizes it
+        // invisibly instead of skipping it.
+        let revealWindow = !self.wasLaunchedAsLoginItem || SettingsStore.shared.showMainWindowAtLoginLaunch
 
         for delay in [0.1, 0.6, 1.2, 2.5, 4.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self else { return }
                 guard self.didRevealMainWindowOnLaunch == false else { return }
 
-                NSApp.unhide(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                if revealWindow {
+                    NSApp.unhide(nil)
+                    NSApp.activate(ignoringOtherApps: true)
 
-                if self.bringMainWindowToFrontIfPresent() {
+                    if self.bringMainWindowToFrontIfPresent() {
+                        self.didRevealMainWindowOnLaunch = true
+                        return
+                    }
+                } else if self.bootMainWindowHiddenIfPresent() {
                     self.didRevealMainWindowOnLaunch = true
                     return
                 }
 
                 DebugLogger.shared.debug("Main window not ready during launch reveal retry", source: "AppDelegate")
                 if delay >= 0.6 {
-                    self.requestMainWindowReopenIfNeeded()
+                    self.requestMainWindowReopenIfNeeded(activate: revealWindow)
                 }
             }
         }
     }
 
-    private func requestMainWindowReopenIfNeeded() {
+    /// Realize the main window invisibly so ContentView's startup runs, then order it out.
+    /// Used for login-item launches when "Show window when launched at login" is off.
+    @discardableResult
+    private func bootMainWindowHiddenIfPresent() -> Bool {
+        guard let mainWindow = NSApp.windows.first(where: self.isMainWindow) else { return false }
+
+        let originalAlpha = mainWindow.alphaValue
+        mainWindow.alphaValue = 0
+        mainWindow.orderFrontRegardless()
+
+        // Give ContentView.onAppear time to finish its startup work (menu bar setup plus
+        // the delayed service initialization), then put the window away. Alpha is restored
+        // so opening it later from the menu bar shows it normally.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            mainWindow.orderOut(nil)
+            mainWindow.alphaValue = originalAlpha
+            DebugLogger.shared.info(
+                "Main window booted hidden (show-at-login-launch disabled)",
+                source: "AppDelegate"
+            )
+        }
+        return true
+    }
+
+    private func requestMainWindowReopenIfNeeded(activate: Bool = true) {
         guard !self.didRequestMainWindowReopen else { return }
         self.didRequestMainWindowReopen = true
 
         let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
+        configuration.activates = activate
 
         DebugLogger.shared.info("Requesting LaunchServices reopen to create SwiftUI main window", source: "AppDelegate")
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
