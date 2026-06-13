@@ -396,10 +396,7 @@ extension AIEnhancementSettingsView {
     }
 
     private struct PrivateAIProviderModelStatus {
-        let title: String
         let detail: String
-        let icon: String
-        let detailIcon: String
         let color: Color
     }
 
@@ -559,41 +556,10 @@ extension AIEnhancementSettingsView {
                 SearchableModelPicker(
                     models: PrivateAIModelRegistry.modelIDs(),
                     selectedModel: self.privateAIModelBinding,
-                    onRefresh: {
-                        await MainActor.run {
-                            self.refreshPrivateAIProviderModels()
-                        }
-                    },
-                    isRefreshing: false,
-                    refreshEnabled: true,
                     selectionEnabled: !isBusy,
                     controlWidth: 180,
                     controlHeight: 30
                 )
-
-                Button(action: { self.loadPrivateAIModel(model) }) {
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .fixedSize()
-                    } else {
-                        Image(systemName: "memorychip")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                }
-                .buttonStyle(CompactButtonStyle(foreground: isLoaded ? Color.fluidGreen : nil))
-                .frame(width: 28, height: 28)
-                .disabled(!isInstalled || isBusy)
-                .help("Load selected model")
-
-                Button(action: { self.unloadPrivateAIModel() }) {
-                    Image(systemName: "eject")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(CompactButtonStyle())
-                .frame(width: 28, height: 28)
-                .disabled(isBusy || !isLoaded)
-                .help("Unload selected model")
 
                 Button(action: { self.revealPrivateAIModelFolder() }) {
                     Image(systemName: "folder")
@@ -601,44 +567,16 @@ extension AIEnhancementSettingsView {
                 }
                 .buttonStyle(CompactButtonStyle())
                 .frame(width: 28, height: 28)
-                .help("Open models folder")
-
-                if !isInstalled {
-                    Button(action: { self.downloadPrivateAIModel(model) }) {
-                        if isDownloading {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .fixedSize()
-                        } else {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                    }
-                    .buttonStyle(CompactButtonStyle())
-                    .frame(width: 28, height: 28)
-                    .disabled(!model.canDownload || isBusy)
-                    .help(model.canDownload ? "Download this model" : "Download URL is not configured yet")
-                }
+                .help("Open downloaded model folder")
             }
 
             if isDownloading || isLoading || isLoaded || hasLoadFailure || !isInstalled {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: status.detailIcon)
-                            .font(.caption)
-                        Text(status.detail)
-                            .font(.caption)
-                            .lineLimit(2)
-                    }
-
-                    if let downloadProgress {
-                        ProgressView(value: downloadProgress)
-                            .controlSize(.mini)
-                            .frame(maxWidth: 260)
-                            .tint(status.color)
-                    }
-                }
-                .foregroundStyle(status.color)
+                self.privateAIModelStatusRow(
+                    status: status,
+                    progress: downloadProgress,
+                    isDownloading: isDownloading,
+                    showsLoadingIndicator: isLoading
+                )
             }
 
             self.privateAIPrefixCacheRow(isBusy: isBusy)
@@ -668,11 +606,8 @@ extension AIEnhancementSettingsView {
                             ProgressView()
                                 .controlSize(.mini)
                                 .fixedSize()
-                        } else {
-                            Image(systemName: "checkmark.shield")
-                                .font(.system(size: 12))
                         }
-                        Text(isTesting ? "Verifying..." : "Verify Connection")
+                        Text(isTesting ? "Loading..." : "Verify")
                             .font(.system(size: 13, weight: .semibold))
                     }
                 }
@@ -685,9 +620,6 @@ extension AIEnhancementSettingsView {
                             ProgressView()
                                 .controlSize(.mini)
                                 .fixedSize()
-                        } else {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.system(size: 12))
                         }
                         Text(isDownloading ? Self.downloadButtonText(progress: downloadProgress) : "Download & Verify")
                             .font(.system(size: 13, weight: .semibold))
@@ -709,19 +641,63 @@ extension AIEnhancementSettingsView {
 
     private func privateAIPrefixCacheRow(isBusy: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "bolt.horizontal.circle")
-                .font(.caption)
-                .foregroundStyle(self.theme.palette.accent)
-                .frame(width: 16)
-
-            Toggle("Prefix cache", isOn: self.privateAIPrefixCacheBinding)
+            Toggle("Fast startup", isOn: self.privateAIPrefixCacheBinding)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .font(.caption)
                 .disabled(isBusy)
-                .help("Reuse the stable Fluid prompt KV cache for faster local dictation enhancement.")
+                .help("Keeps a reusable local prompt cache for faster first dictation.")
 
             Spacer(minLength: 0)
+        }
+    }
+
+    private func privateAIModelStatusRow(
+        status: PrivateAIProviderModelStatus,
+        progress: PrivateAIModelDownloadProgress?,
+        isDownloading: Bool,
+        showsLoadingIndicator: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if showsLoadingIndicator, !isDownloading {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .fixedSize()
+                }
+
+                Text(status.detail)
+                    .font(.caption)
+                    .lineLimit(2)
+            }
+
+            if isDownloading {
+                self.privateAIDownloadProgressBar(progress: progress, color: status.color)
+
+                Text(Self.downloadProgressText(progress))
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(status.color)
+    }
+
+    @ViewBuilder
+    private func privateAIDownloadProgressBar(
+        progress: PrivateAIModelDownloadProgress?,
+        color: Color
+    ) -> some View {
+        if let fractionCompleted = progress?.fractionCompleted {
+            ProgressView(value: fractionCompleted)
+                .controlSize(.mini)
+                .frame(maxWidth: 260)
+                .tint(color)
+        } else {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .controlSize(.mini)
+                .frame(maxWidth: 260)
+                .tint(color)
         }
     }
 
@@ -789,7 +765,7 @@ extension AIEnhancementSettingsView {
                         guard self.privateAISelectedModelID == model.id else { return }
                         self.privateAILoadState = .downloading(
                             modelID: model.id,
-                            progress: progress.fractionCompleted
+                            progress: progress
                         )
                     }
                 }
@@ -845,82 +821,56 @@ extension AIEnhancementSettingsView {
         for model: PrivateAIRegisteredModel
     ) -> PrivateAIProviderModelStatus {
         if self.privateAILoadState.isDownloading(model.id) {
-            let progress = self.privateAILoadState.downloadProgress(for: model.id)
             return PrivateAIProviderModelStatus(
-                title: "Downloading model",
-                detail: "Downloading \(model.displayName)\(Self.downloadProgressSuffix(progress)). This can take a few minutes on first setup.",
-                icon: "arrow.down.circle.fill",
-                detailIcon: "arrow.down.circle.fill",
+                detail: "Downloading model.",
                 color: self.theme.palette.accent
             )
         }
 
         if self.privateAILoadState.isLoading(model.id) {
             return PrivateAIProviderModelStatus(
-                title: "Loading model",
-                detail: "\(model.displayName) is warming into memory.",
-                icon: "arrow.triangle.2.circlepath",
-                detailIcon: "memorychip",
+                detail: "Loading...",
                 color: self.theme.palette.accent
             )
         }
 
         if self.privateAILoadState.isLoaded(model.id) {
-            let latency = self.privateAILoadState.latencyMilliseconds(for: model.id)
             return PrivateAIProviderModelStatus(
-                title: "Model loaded",
-                detail: "\(model.displayName) loaded\(Self.loadDurationText(latency)) and will stay warm until unloaded or switched.",
-                icon: "memorychip.fill",
-                detailIcon: "checkmark.shield.fill",
+                detail: "Ready.",
                 color: Color.fluidGreen
             )
         }
 
         if let message = self.privateAILoadState.failureMessage(for: model.id) {
             return PrivateAIProviderModelStatus(
-                title: "Load failed",
                 detail: message,
-                icon: "exclamationmark.triangle.fill",
-                detailIcon: "info.circle",
                 color: .red
             )
         }
 
         if PrivateAIIntegrationService.isModelInstalled(model) {
             return PrivateAIProviderModelStatus(
-                title: "Local model ready",
-                detail: "\(model.displayName) is installed. Load it to keep it warm in memory.",
-                icon: "checkmark.circle.fill",
-                detailIcon: "checkmark.shield.fill",
+                detail: "Ready to verify.",
                 color: Color.fluidGreen
             )
         }
 
         if PrivateAIIntegrationService.isLocalRuntimeConfigured {
             return PrivateAIProviderModelStatus(
-                title: "Local override ready",
-                detail: "A local GGUF override is configured for this developer build.",
-                icon: "checkmark.circle.fill",
-                detailIcon: "checkmark.shield.fill",
+                detail: "Local model configured.",
                 color: Color.fluidGreen
             )
         }
 
         if model.canDownload {
             return PrivateAIProviderModelStatus(
-                title: "Download available",
-                detail: "\(model.displayName) can be downloaded and verified locally.",
-                icon: "arrow.down.circle.fill",
-                detailIcon: "arrow.down.circle",
+                detail: "Model not downloaded.",
                 color: self.theme.palette.accent
             )
         }
 
         return PrivateAIProviderModelStatus(
-            title: "Model not installed",
-            detail: "Waiting for the Hugging Face URL/checksum to be locked in the registry.",
-            icon: "externaldrive.badge.questionmark",
-            detailIcon: "info.circle",
+            detail: "Model unavailable.",
             color: .orange
         )
     }
@@ -984,14 +934,6 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private func unloadPrivateAIModel() {
-        self.privateAILoadState = .idle
-        Task { @MainActor in
-            await PrivateAIIntegrationService.shared.unloadCachedRuntime(reason: "user")
-            self.viewModel.refreshProviderItems()
-        }
-    }
-
     private static func errorMessage(for error: Error) -> String {
         if let localizedError = error as? LocalizedError,
            let description = localizedError.errorDescription
@@ -1001,28 +943,32 @@ extension AIEnhancementSettingsView {
         return String(describing: error)
     }
 
-    private static func downloadProgressSuffix(_ progress: Double?) -> String {
-        guard let progress else { return "" }
-        return " \(Int(progress * 100))%"
+    private static func downloadButtonText(progress: PrivateAIModelDownloadProgress?) -> String {
+        guard let fraction = progress?.fractionCompleted else { return "Downloading..." }
+        return "Downloading \(Int(fraction * 100))%"
     }
 
-    private static func downloadButtonText(progress: Double?) -> String {
+    private static func downloadProgressText(_ progress: PrivateAIModelDownloadProgress?) -> String {
         guard let progress else { return "Downloading..." }
-        return "Downloading \(Int(progress * 100))%"
+        let written = Self.byteCountText(progress.totalBytesWritten)
+        guard let expected = progress.totalBytesExpected, expected > 0 else {
+            return "\(written) downloaded"
+        }
+
+        let expectedText = Self.byteCountText(expected)
+        if let fraction = progress.fractionCompleted {
+            return "\(written) of \(expectedText) (\(Int(fraction * 100))%)"
+        }
+        return "\(written) of \(expectedText)"
+    }
+
+    private static func byteCountText(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private static func elapsedMilliseconds(since start: ContinuousClock.Instant) -> Int {
         let elapsed = start.duration(to: ContinuousClock.now)
         return Int(elapsed.components.seconds * 1000) + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
-    }
-
-    private static func loadDurationText(_ milliseconds: Int?) -> String {
-        guard let milliseconds else { return "" }
-        if milliseconds >= 1000 {
-            let seconds = Double(milliseconds) / 1000
-            return String(format: " in %.1fs", seconds)
-        }
-        return " in \(milliseconds)ms"
     }
 
     private func persistPrivateAIModelSelection(_ value: String) {
@@ -1404,6 +1350,7 @@ extension AIEnhancementSettingsView {
         let fluidStatus = self.privateAIModelStatus(for: fluidModel)
         let isFluidInstalled = PrivateAIIntegrationService.isModelInstalled(fluidModel)
         let isFluidDownloading = self.privateAILoadState.isDownloading(fluidModel.id)
+        let fluidDownloadProgress = self.privateAILoadState.downloadProgress(for: fluidModel.id)
         let isFluidLoading = self.privateAILoadState.isLoading(fluidModel.id)
         let isFluidLoaded = self.privateAILoadState.isLoaded(fluidModel.id)
         let hasFluidLoadFailure = self.privateAILoadState.failureMessage(for: fluidModel.id) != nil
@@ -1445,50 +1392,62 @@ extension AIEnhancementSettingsView {
 
                 Spacer()
 
-                SearchableModelPicker(
-                    models: isPrivateAIProvider ? PrivateAIModelRegistry.modelIDs() : models,
-                    selectedModel: isPrivateAIProvider ? self.privateAIModelBinding : self.modelBinding(for: item.id),
-                    onRefresh: {
-                        if isPrivateAIProvider {
-                            await MainActor.run {
-                                self.refreshPrivateAIProviderModels()
-                            }
-                        } else {
+                if isPrivateAIProvider {
+                    SearchableModelPicker(
+                        models: PrivateAIModelRegistry.modelIDs(),
+                        selectedModel: self.privateAIModelBinding,
+                        selectionEnabled: !isFluidBusy,
+                        controlWidth: 180,
+                        controlHeight: 28
+                    )
+                } else {
+                    SearchableModelPicker(
+                        models: models,
+                        selectedModel: self.modelBinding(for: item.id),
+                        onRefresh: {
                             self.activateProvider(item.id)
                             await self.viewModel.fetchModelsForCurrentProvider()
-                        }
-                    },
-                    isRefreshing: isRefreshing,
-                    refreshEnabled: isPrivateAIProvider ? true : canFetchModels,
-                    selectionEnabled: isPrivateAIProvider ? !isFluidBusy : hasModels,
-                    controlWidth: 180,
-                    controlHeight: 28
-                )
+                        },
+                        isRefreshing: isRefreshing,
+                        refreshEnabled: canFetchModels,
+                        selectionEnabled: hasModels,
+                        controlWidth: 180,
+                        controlHeight: 28
+                    )
+                }
 
                 if isPrivateAIProvider {
-                    Button(action: { self.loadPrivateAIModel(fluidModel) }) {
-                        if isFluidLoading {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .fixedSize()
-                        } else {
-                            Image(systemName: "memorychip")
-                                .font(.system(size: 12, weight: .semibold))
+                    if isFluidDownloading || !isFluidInstalled {
+                        Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
+                            HStack(spacing: 5) {
+                                if isFluidDownloading {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                        .fixedSize()
+                                }
+                                Text(isFluidDownloading ? Self.downloadButtonText(progress: fluidDownloadProgress) : "Download")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
                         }
+                        .buttonStyle(AccentButtonStyle(compact: true))
+                        .disabled(!fluidModel.canDownload || isFluidBusy)
+                        .help(fluidModel.canDownload ? "Download and verify selected model" : "Download URL is not configured yet")
+                    } else if !isFluidLoaded {
+                        Button(action: { self.verifyPrivateAIConnection(fluidModel) }) {
+                            HStack(spacing: 5) {
+                                if isFluidLoading || isFluidTesting {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                        .fixedSize()
+                                }
+                                Text((isFluidLoading || isFluidTesting) ? "Loading..." : "Verify")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                        }
+                        .buttonStyle(AccentButtonStyle(compact: true))
+                        .disabled(isFluidBusy)
+                        .help("Verify selected model")
                     }
-                    .buttonStyle(CompactButtonStyle(foreground: isFluidLoaded ? Color.fluidGreen : nil))
-                    .frame(width: 28, height: 28)
-                    .disabled(!isFluidInstalled || isFluidBusy)
-                    .help("Load selected model")
-
-                    Button(action: { self.unloadPrivateAIModel() }) {
-                        Image(systemName: "eject")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .buttonStyle(CompactButtonStyle())
-                    .frame(width: 28, height: 28)
-                    .disabled(isFluidBusy || !isFluidLoaded)
-                    .help("Unload selected model")
 
                     Button(action: { self.revealPrivateAIModelFolder() }) {
                         Image(systemName: "folder")
@@ -1496,24 +1455,7 @@ extension AIEnhancementSettingsView {
                     }
                     .buttonStyle(CompactButtonStyle())
                     .frame(width: 28, height: 28)
-                    .help("Open models folder")
-
-                    if !isFluidInstalled {
-                        Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
-                            if isFluidDownloading {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                    .fixedSize()
-                            } else {
-                                Image(systemName: "arrow.down.circle")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                        }
-                        .buttonStyle(CompactButtonStyle())
-                        .frame(width: 28, height: 28)
-                        .disabled(!fluidModel.canDownload || isFluidBusy)
-                        .help(fluidModel.canDownload ? "Download and verify selected model" : "Download URL is not configured yet")
-                    }
+                    .help("Open downloaded model folder")
                 } else {
                     self.reasoningButton(for: item.id)
 
@@ -1532,14 +1474,12 @@ extension AIEnhancementSettingsView {
             }
 
             if isPrivateAIProvider, isFluidDownloading || isFluidLoading || isFluidLoaded || hasFluidLoadFailure || !isFluidInstalled {
-                HStack(spacing: 6) {
-                    Image(systemName: fluidStatus.detailIcon)
-                        .font(.caption)
-                    Text(fluidStatus.detail)
-                        .font(.caption)
-                        .lineLimit(2)
-                }
-                .foregroundStyle(fluidStatus.color)
+                self.privateAIModelStatusRow(
+                    status: fluidStatus,
+                    progress: fluidDownloadProgress,
+                    isDownloading: isFluidDownloading,
+                    showsLoadingIndicator: isFluidLoading || isFluidTesting
+                )
                 .padding(.top, 8)
             }
 
