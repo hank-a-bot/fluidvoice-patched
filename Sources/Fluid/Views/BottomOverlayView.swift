@@ -1805,22 +1805,22 @@ struct BottomOverlayView: View {
             switch size {
             case .pill:
                 return LayoutConstants(
-                    hPadding: 10,
-                    vPadding: 7,
-                    waveformWidth: 42,
-                    waveformHeight: 16,
+                    hPadding: 12,
+                    vPadding: 8,
+                    waveformWidth: 46,
+                    waveformHeight: 30,
                     iconSize: 18,
                     transFontSize: 10,
                     modeFontSize: 9,
-                    cornerRadius: 16,
+                    cornerRadius: 23,
                     barCount: 8,
-                    barWidth: 2.5,
-                    barSpacing: 2.0,
-                    minBarHeight: 3,
-                    maxBarHeight: 15,
-                    containerWidth: 88,
-                    overlayWidth: 88,
-                    overlayHeight: 32,
+                    barWidth: 3.0,
+                    barSpacing: 2.5,
+                    minBarHeight: 4,
+                    maxBarHeight: 28,
+                    containerWidth: 100,
+                    overlayWidth: 100,
+                    overlayHeight: 46,
                     previewBoxHeight: 0,
                     usesFixedCanvas: false,
                     showsTopControls: false,
@@ -1909,6 +1909,10 @@ struct BottomOverlayView: View {
 
     private var isCompactControls: Bool {
         self.settings.overlaySize == .medium
+    }
+
+    private var isPillSize: Bool {
+        self.settings.overlaySize == .pill
     }
 
     private var modeColor: Color {
@@ -2171,11 +2175,19 @@ struct BottomOverlayView: View {
     }
 
     private var overlayBorderTopOpacity: Double {
-        self.settings.overlaySize == .large ? 0.10 : 0.15
+        switch self.settings.overlaySize {
+        case .pill: return 0.22 // a touch crisper so the smaller pill reads clearly
+        case .large: return 0.10
+        default: return 0.15
+        }
     }
 
     private var overlayBorderBottomOpacity: Double {
-        self.settings.overlaySize == .large ? 0.05 : 0.08
+        switch self.settings.overlaySize {
+        case .pill: return 0.10
+        case .large: return 0.05
+        default: return 0.08
+        }
     }
 
     private var overlayAnimatedOffsetY: CGFloat {
@@ -2759,23 +2771,54 @@ struct BottomOverlayView: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .background(
                 ZStack {
-                    // Solid pitch black background
+                    // Solid pitch black background, with a soft drop shadow so the pill lifts
+                    // off whatever is behind it (pill size only; outer padding reserves room).
                     RoundedRectangle(cornerRadius: self.layout.cornerRadius)
                         .fill(Color.black)
-
-                    // Inner border
-                    RoundedRectangle(cornerRadius: self.layout.cornerRadius)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(self.overlayBorderTopOpacity),
-                                    Color.white.opacity(self.overlayBorderBottomOpacity),
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: self.overlayBorderLineWidth
+                        .shadow(
+                            color: Color.black.opacity(self.isPillSize ? 0.32 : 0),
+                            radius: self.isPillSize ? 10 : 0,
+                            x: 0,
+                            y: self.isPillSize ? 4 : 0
                         )
+
+                    if self.isPillSize {
+                        // Glossy border: a bright highlight that slowly rotates around the edge.
+                        TimelineView(.animation) { timeline in
+                            let seconds = timeline.date.timeIntervalSinceReferenceDate
+                            let angle = (seconds.truncatingRemainder(dividingBy: 6.0) / 6.0) * 360.0
+                            RoundedRectangle(cornerRadius: self.layout.cornerRadius)
+                                .strokeBorder(
+                                    AngularGradient(
+                                        gradient: Gradient(stops: [
+                                            .init(color: .white.opacity(0.06), location: 0.00),
+                                            .init(color: .white.opacity(0.55), location: 0.13),
+                                            .init(color: .white.opacity(0.10), location: 0.30),
+                                            .init(color: .white.opacity(0.03), location: 0.55),
+                                            .init(color: .white.opacity(0.22), location: 0.80),
+                                            .init(color: .white.opacity(0.06), location: 1.00),
+                                        ]),
+                                        center: .center,
+                                        angle: .degrees(angle)
+                                    ),
+                                    lineWidth: 1.2
+                                )
+                        }
+                    } else {
+                        // Inner border
+                        RoundedRectangle(cornerRadius: self.layout.cornerRadius)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(self.overlayBorderTopOpacity),
+                                        Color.white.opacity(self.overlayBorderBottomOpacity),
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: self.overlayBorderLineWidth
+                            )
+                    }
                 }
             )
             .frame(maxWidth: .infinity, alignment: .top)
@@ -2790,6 +2833,8 @@ struct BottomOverlayView: View {
             height: self.overlayFrameHeight,
             alignment: .top
         )
+        // Reserve space around the pill so its drop shadow isn't clipped by the (content-sized) window.
+        .padding(self.isPillSize ? 26 : 0)
         .frame(maxHeight: .infinity, alignment: .top)
         .scaleEffect(self.overlayAnimatedScale, anchor: .center)
         .offset(y: self.overlayAnimatedOffsetY)
@@ -2954,7 +2999,7 @@ struct BottomWaveformView: View {
 
     private var barFillColor: Color {
         if self.isPillStyle {
-            return Color.white.opacity(self.isProcessingVisualActive ? 0.28 : 0.62)
+            return Color.white.opacity(self.isProcessingVisualActive ? 0.32 : 0.88)
         }
         return self.color.opacity(self.isProcessingVisualActive ? 0.16 : 1.0)
     }
@@ -3076,7 +3121,8 @@ struct BottomWaveformView: View {
         let normalizedLevel = min(max(level, 0), 1)
         let denominator = max(1.0 - self.noiseThreshold, 0.001)
         let adjustedLevel = max(min((normalizedLevel - self.noiseThreshold) / denominator, 1.0), 0.0)
-        let amplifiedLevel = pow(adjustedLevel, 0.7)
+        // Lower exponent => normal speech pushes the bars higher (taller "waves" while talking).
+        let amplifiedLevel = pow(adjustedLevel, 0.55)
 
         withAnimation(.easeOut(duration: 0.08)) {
             for i in 0..<self.barCount {
