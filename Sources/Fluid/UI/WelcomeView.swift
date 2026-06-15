@@ -1024,8 +1024,7 @@ struct OnboardingFlowView: View {
                                 Button(self.onboardingModelActionButtonTitle(for: self.recommendedOnboardingModel)) {
                                     self.prepareOnboardingModel(self.recommendedOnboardingModel)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(self.theme.palette.accent)
+                                .fluidOnboardingProminentButton()
                                 .disabled(self.asr.isRunning || self.isPreparingRecommendedModel || self.isRecommendedModelReady)
                             }
                         }
@@ -1081,8 +1080,7 @@ struct OnboardingFlowView: View {
                                 Button(self.microphoneActionButtonTitle) {
                                     self.handleMicrophoneAction()
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(self.theme.palette.accent)
+                                .fluidOnboardingProminentButton()
                             }
                         }
 
@@ -1132,8 +1130,7 @@ struct OnboardingFlowView: View {
                                 Button("Enable Accessibility") {
                                     self.openAccessibilitySettings()
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(self.theme.palette.accent)
+                                .fluidOnboardingProminentButton()
                             }
                         }
 
@@ -1153,8 +1150,7 @@ struct OnboardingFlowView: View {
                             Button("Restart FluidVoice") {
                                 self.restartApp()
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            .fluidOnboardingSecondaryButton(controlSize: .small)
                         }
                     }
                     .padding(16)
@@ -1216,15 +1212,7 @@ struct OnboardingFlowView: View {
                         ))
                         .font(.body)
                         .frame(height: 170)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(self.theme.palette.cardBackground)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(self.theme.palette.cardBorder.opacity(0.6), lineWidth: 1)
-                                )
-                        )
+                        .fluidOnboardingEditorSurface()
                         .scrollContentBackground(.hidden)
 
                         if self.isPlaygroundReady {
@@ -1259,7 +1247,7 @@ struct OnboardingFlowView: View {
                 Button("Back") {
                     self.goBack()
                 }
-                .buttonStyle(.bordered)
+                .fluidOnboardingSecondaryButton()
             }
 
             Spacer()
@@ -1269,14 +1257,13 @@ struct OnboardingFlowView: View {
                     self.markAISkipped()
                     self.goNext()
                 }
-                .buttonStyle(.bordered)
+                .fluidOnboardingSecondaryButton()
             }
 
             Button(self.primaryButtonTitle) {
                 self.handlePrimaryAction()
             }
-            .buttonStyle(.borderedProminent)
-            .tint(self.theme.palette.accent)
+            .fluidOnboardingProminentButton()
             .disabled(!self.canContinue)
         }
         .padding(20)
@@ -1386,8 +1373,7 @@ struct OnboardingFlowView: View {
             Button(self.onboardingModelActionButtonTitle(for: model)) {
                 self.prepareOnboardingModel(model, preserveManualChoice: true)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .fluidOnboardingSecondaryButton(controlSize: .small)
             .disabled(self.asr.isRunning || isPreparing || isReady)
 
             if isPreparing {
@@ -1422,19 +1408,11 @@ struct OnboardingFlowView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(isSelected ? 0.82 : 0.55))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(
-                            isSelected ? self.theme.palette.accent.opacity(0.45) : self.theme.palette.cardBorder.opacity(0.32),
-                            lineWidth: 1
-                        )
-                )
+        .fluidOnboardingSelectableSurface(
+            isSelected: isSelected,
+            cornerRadius: self.theme.metrics.onboardingSurface.compactOptionCornerRadius,
+            padding: self.theme.metrics.onboardingSurface.compactOptionPadding
         )
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {
             self.selectOnboardingModel(model, preserveManualChoice: true)
         }
@@ -1509,26 +1487,12 @@ struct OnboardingFlowView: View {
                 Button(self.onboardingModelActionButtonTitle(for: model)) {
                     self.prepareOnboardingModel(model, preserveManualChoice: true)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .tint(self.theme.palette.accent)
+                .fluidOnboardingProminentButton(controlSize: .small)
                 .disabled(self.asr.isRunning || isPreparing || isReady)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(isSelected ? 0.82 : 0.55))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(
-                            isSelected ? self.theme.palette.accent.opacity(0.45) : self.theme.palette.cardBorder.opacity(0.32),
-                            lineWidth: 1
-                        )
-                )
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .fluidOnboardingSelectableSurface(isSelected: isSelected)
         .onTapGesture {
             self.selectOnboardingModel(model, preserveManualChoice: true)
         }
@@ -1588,18 +1552,7 @@ struct OnboardingFlowView: View {
                     .multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(self.theme.palette.cardBackground.opacity(isSelected ? 0.82 : 0.55))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(
-                                isSelected ? self.theme.palette.accent.opacity(0.55) : self.theme.palette.cardBorder.opacity(0.32),
-                                lineWidth: 1
-                            )
-                    )
-            )
+            .fluidOnboardingSelectableSurface(isSelected: isSelected, selectedBorderOpacity: 0.55)
         }
         .buttonStyle(.plain)
     }

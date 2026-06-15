@@ -139,11 +139,40 @@ struct AppTheme {
             )
         }
 
+        struct OnboardingSurface {
+            let normalFillOpacity: Double
+            let selectedFillOpacity: Double
+            let normalBorderOpacity: Double
+            let selectedBorderOpacity: Double
+            let editorBorderOpacity: Double
+            let editorPadding: CGFloat
+            let optionPadding: CGFloat
+            let compactOptionPadding: CGFloat
+            let optionCornerRadius: CGFloat
+            let compactOptionCornerRadius: CGFloat
+            let editorCornerRadius: CGFloat
+
+            static let standard = OnboardingSurface(
+                normalFillOpacity: 0.55,
+                selectedFillOpacity: 0.82,
+                normalBorderOpacity: 0.32,
+                selectedBorderOpacity: 0.45,
+                editorBorderOpacity: 0.6,
+                editorPadding: 10,
+                optionPadding: 12,
+                compactOptionPadding: 10,
+                optionCornerRadius: 12,
+                compactOptionCornerRadius: 10,
+                editorCornerRadius: 8
+            )
+        }
+
         let spacing: Spacing
         let corners: CornerRadius
         let formRow: FormRow
         let pickerControl: PickerControl
         let cardSurface: CardSurface
+        let onboardingSurface: OnboardingSurface
         let cardShadow: Shadow
         let elevatedCardShadow: Shadow
     }
@@ -187,6 +216,7 @@ struct AppTheme {
                 formRow: .standard,
                 pickerControl: .standard,
                 cardSurface: .defaults,
+                onboardingSurface: .standard,
                 cardShadow: .subtle(color: .black, opacity: 0.70),
                 elevatedCardShadow: .subtle(color: .black, opacity: 0.80)
             ),
