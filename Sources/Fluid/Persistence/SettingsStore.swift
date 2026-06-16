@@ -1978,6 +1978,22 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var onboardingSelectedLanguageID: String {
+        get {
+            let stored = self.defaults.string(forKey: Keys.onboardingSelectedLanguageID)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let stored, !stored.isEmpty {
+                return stored
+            }
+            return "en"
+        }
+        set {
+            objectWillChange.send()
+            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.defaults.set(normalized.isEmpty ? "en" : normalized, forKey: Keys.onboardingSelectedLanguageID)
+        }
+    }
+
     var shouldShowOnboarding: Bool {
         !self.onboardingCompleted
     }
@@ -1999,11 +2015,13 @@ final class SettingsStore: ObservableObject {
             self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
             self.defaults.set(false, forKey: Keys.onboardingAISkipped)
             self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+            self.defaults.set("en", forKey: Keys.onboardingSelectedLanguageID)
         } else {
             self.defaults.set(true, forKey: Keys.onboardingCompleted)
             self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
             self.defaults.set(false, forKey: Keys.onboardingAISkipped)
             self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+            self.defaults.set("en", forKey: Keys.onboardingSelectedLanguageID)
         }
     }
 
@@ -2013,6 +2031,7 @@ final class SettingsStore: ObservableObject {
         self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
         self.defaults.set(false, forKey: Keys.onboardingAISkipped)
         self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+        self.defaults.set("en", forKey: Keys.onboardingSelectedLanguageID)
         self.defaults.set(false, forKey: Keys.playgroundUsed)
     }
 
@@ -3928,6 +3947,7 @@ private extension SettingsStore {
         static let onboardingCurrentStep = "OnboardingCurrentStep"
         static let onboardingAISkipped = "OnboardingAISkipped"
         static let onboardingPlaygroundValidated = "OnboardingPlaygroundValidated"
+        static let onboardingSelectedLanguageID = "OnboardingSelectedLanguageID"
 
         // Command Mode Keys
         static let commandModeSelectedModel = "CommandModeSelectedModel"

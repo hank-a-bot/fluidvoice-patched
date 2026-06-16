@@ -187,6 +187,9 @@ struct ContentView: View {
     private let accessibilityRestartFlagKey = "FluidVoice_AccessibilityRestartPending"
     private let hasAutoRestartedForAccessibilityKey = "FluidVoice_HasAutoRestartedForAccessibility"
     @State private var accessibilityPollingTask: Task<Void, Never>?
+    @State private var accessibilityGuidePanel: NSPanel?
+    @State private var accessibilityGuideMonitorTask: Task<Void, Never>?
+    @State private var accessibilityGuideRequestID: UUID?
 
     private var isRecordingAnyShortcutCapture: Bool {
         self.activeShortcutRecordingTarget != nil
@@ -253,7 +256,9 @@ struct ContentView: View {
                 self.showRestartPrompt = false
             }
             // Ensure no restart UI shows if we already have trust
-            if self.accessibilityEnabled { self.showRestartPrompt = false }
+            if self.accessibilityEnabled {
+                self.finishAccessibilityPermissionFlow()
+            }
 
             // Set default selection if none exists (from menu bar navigation)
             // Show Preferences as default once voice model is ready (AI enhancement is optional)
@@ -539,6 +544,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: self.accessibilityEnabled) { _, enabled in
+            if enabled {
+                self.finishAccessibilityPermissionFlow()
+            }
+
             if enabled && self.hotkeyManager != nil && !self.hotkeyManagerInitialized {
                 DebugLogger.shared.debug("Accessibility enabled, reinitializing hotkey manager", source: "ContentView")
                 self.hotkeyManager?.reinitialize()
@@ -697,8 +706,7 @@ struct ContentView: View {
             // settings window is closed. No retain cycle risk since ContentView is a value type.
 
             // Stop accessibility polling
-            self.accessibilityPollingTask?.cancel()
-            self.accessibilityPollingTask = nil
+            self.finishAccessibilityPermissionFlow()
         }
         .onChange(of: self.hotkeyShortcut) { _, newValue in
             DebugLogger.shared.debug("Hotkey shortcut changed to \(newValue.displayString)", source: "ContentView")
@@ -1048,6 +1056,7 @@ struct ContentView: View {
                 set: { self.settings.onboardingCurrentStep = $0 }
             ),
             accessibilityEnabled: self.accessibilityEnabled,
+            accessibilitySetupInProgress: self.didOpenAccessibilityPane,
             markAISkipped: {
                 self.settings.onboardingAISkipped = true
                 self.settings.setDictationPromptSelection(.off)
@@ -3160,7 +3169,7 @@ extension ContentView {
     }
 
     private var onboardingVoiceModelReady: Bool {
-        self.asr.isAsrReady || self.asr.modelsExistOnDisk || SettingsStore.shared.selectedSpeechModel.isInstalled
+        self.asr.isAsrReady
     }
 
     private var onboardingMicrophoneReady: Bool {
@@ -3225,10 +3234,253 @@ extension ContentView {
     }
 
     func openAccessibilitySettings() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
+        let requestID = UUID()
+        self.accessibilityGuideRequestID = requestID
+
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
         self.didOpenAccessibilityPane = true
         UserDefaults.standard.set(true, forKey: self.accessibilityRestartFlagKey)
+        self.startAccessibilityPolling()
+        self.positionWindowBesideSystemSettings(requestID: requestID)
+        self.showAccessibilityGuidePanel(requestID: requestID)
+        self.activateSystemSettingsSoon(requestID: requestID)
+    }
+
+    private func positionWindowBesideSystemSettings(requestID: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            guard self.accessibilityGuideRequestID == requestID else { return }
+            guard let window = NSApp.windows.first(where: { $0.isVisible && $0.title == "FluidVoice" }) ?? NSApp.keyWindow else {
+                return
+            }
+
+            let screen = self.systemSettingsWindowFrame()
+                .flatMap { settingsFrame in
+                    NSScreen.screens.first { $0.frame.intersects(settingsFrame) }
+                } ?? window.screen ?? NSScreen.main
+            guard let screen else { return }
+
+            let visibleFrame = screen.visibleFrame
+            let currentSize = window.frame.size
+            let guideWidth = min(currentSize.width, max(640, visibleFrame.width * 0.42))
+            let guideHeight = min(currentSize.height, visibleFrame.height - 56)
+            let targetSize = NSSize(width: guideWidth, height: guideHeight)
+
+            let settingsFrame = self.systemSettingsWindowFrame()
+            let gap: CGFloat = 20
+            let targetX: CGFloat
+            if let settingsFrame, settingsFrame.maxX + gap + targetSize.width <= visibleFrame.maxX {
+                targetX = settingsFrame.maxX + gap
+            } else if let settingsFrame, settingsFrame.minX - gap - targetSize.width >= visibleFrame.minX {
+                targetX = settingsFrame.minX - gap - targetSize.width
+            } else {
+                targetX = visibleFrame.maxX - targetSize.width - 24
+            }
+
+            let targetY: CGFloat
+            if let settingsFrame {
+                targetY = min(
+                    visibleFrame.maxY - targetSize.height - 16,
+                    max(visibleFrame.minY + 16, settingsFrame.maxY - targetSize.height)
+                )
+            } else {
+                targetY = visibleFrame.midY - (targetSize.height / 2)
+            }
+
+            window.setFrame(
+                NSRect(origin: NSPoint(x: targetX, y: targetY), size: targetSize),
+                display: true,
+                animate: true
+            )
+            window.orderBack(nil)
+        }
+    }
+
+    private func systemSettingsWindowFrame() -> NSRect? {
+        guard let windowList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+
+        for info in windowList {
+            guard (info[kCGWindowOwnerName as String] as? String) == "System Settings",
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let x = bounds["X"] as? CGFloat,
+                  let y = bounds["Y"] as? CGFloat,
+                  let width = bounds["Width"] as? CGFloat,
+                  let height = bounds["Height"] as? CGFloat,
+                  width > 0,
+                  height > 0
+            else {
+                continue
+            }
+
+            for screen in NSScreen.screens {
+                let convertedFrame = NSRect(
+                    x: x,
+                    y: screen.frame.maxY - y - height,
+                    width: width,
+                    height: height
+                )
+                if screen.frame.intersects(convertedFrame) {
+                    return convertedFrame
+                }
+            }
+
+            let convertedY = (NSScreen.main?.frame.maxY ?? 0) - y - height
+            return NSRect(x: x, y: convertedY, width: width, height: height)
+        }
+
+        return nil
+    }
+
+    private func showAccessibilityGuidePanel(requestID: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+            guard self.accessibilityGuideRequestID == requestID else { return }
+            guard !AXIsProcessTrusted() else {
+                self.finishAccessibilityPermissionFlow()
+                return
+            }
+
+            let settingsFrame = self.systemSettingsWindowFrame()
+            let screen = settingsFrame
+                .flatMap { frame in NSScreen.screens.first { $0.frame.intersects(frame) } } ?? NSScreen.main
+            guard let screen else { return }
+
+            let visibleFrame = screen.visibleFrame
+            let panelWidth = min(max((settingsFrame?.width ?? visibleFrame.width * 0.48) * 0.86, 520), 760)
+            let panelHeight: CGFloat = 132
+            let gap: CGFloat = 14
+
+            let panelX: CGFloat
+            let panelY: CGFloat
+            if let settingsFrame {
+                panelX = min(
+                    visibleFrame.maxX - panelWidth - 16,
+                    max(visibleFrame.minX + 16, settingsFrame.midX - (panelWidth / 2))
+                )
+                panelY = max(visibleFrame.minY + 16, settingsFrame.minY - panelHeight - gap)
+            } else {
+                panelX = visibleFrame.midX - (panelWidth / 2)
+                panelY = visibleFrame.minY + 120
+            }
+
+            let frame = NSRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
+            let panel = self.accessibilityGuidePanel ?? NSPanel(
+                contentRect: frame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+
+            panel.level = .floating
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.hidesOnDeactivate = false
+            panel.contentView = NSHostingView(
+                rootView: AccessibilitySettingsFloatingGuideView(
+                    appURL: self.draggableAccessibilityAppURL,
+                    onReturnToApp: {
+                        self.cancelAccessibilityPermissionFlow()
+                    },
+                    onClose: {
+                        self.cancelAccessibilityPermissionFlow()
+                    }
+                )
+            )
+            panel.setFrame(frame, display: true, animate: self.accessibilityGuidePanel != nil)
+            panel.orderFrontRegardless()
+            self.accessibilityGuidePanel = panel
+            self.startAccessibilityGuidePanelMonitor()
+            self.activateSystemSettingsSoon(requestID: requestID)
+        }
+    }
+
+    private func activateSystemSettingsSoon(requestID: UUID) {
+        for delay in [0.25, 0.85, 1.45] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard self.accessibilityGuideRequestID == requestID else { return }
+                self.activateSystemSettings()
+            }
+        }
+    }
+
+    private func activateSystemSettings() {
+        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.SystemSettings" }) ??
+            NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.systempreferences" }) ??
+            NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "System Settings" })
+        {
+            app.activate(options: [])
+        }
+    }
+
+    private func cancelAccessibilityPermissionFlow() {
+        self.finishAccessibilityPermissionFlow()
+        NSApp.activate(ignoringOtherApps: true)
+        (NSApp.windows.first { $0.isVisible && $0.title == "FluidVoice" } ?? NSApp.keyWindow)?
+            .makeKeyAndOrderFront(nil)
+    }
+
+    private func finishAccessibilityPermissionFlow() {
+        self.accessibilityGuideRequestID = nil
+        self.didOpenAccessibilityPane = false
+        self.showRestartPrompt = false
+        UserDefaults.standard.set(false, forKey: self.accessibilityRestartFlagKey)
+        self.closeAccessibilityGuidePanel()
+        self.stopAccessibilityPolling()
+    }
+
+    private func closeAccessibilityGuidePanel() {
+        self.accessibilityGuideMonitorTask?.cancel()
+        self.accessibilityGuideMonitorTask = nil
+        self.accessibilityGuidePanel?.close()
+        self.accessibilityGuidePanel = nil
+    }
+
+    private func startAccessibilityGuidePanelMonitor() {
+        self.accessibilityGuideMonitorTask?.cancel()
+        self.accessibilityGuideMonitorTask = Task {
+            var missingSettingsCount = 0
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+
+                let isTrusted = AXIsProcessTrusted()
+                let settingsFrame = await MainActor.run {
+                    self.systemSettingsWindowFrame()
+                }
+
+                if isTrusted {
+                    await MainActor.run {
+                        self.finishAccessibilityPermissionFlow()
+                    }
+                    return
+                }
+
+                if settingsFrame == nil {
+                    missingSettingsCount += 1
+                } else {
+                    missingSettingsCount = 0
+                }
+
+                if missingSettingsCount >= 3 {
+                    await MainActor.run {
+                        self.cancelAccessibilityPermissionFlow()
+                    }
+                    return
+                }
+            }
+        }
+    }
+
+    private var draggableAccessibilityAppURL: URL {
+        let installedURL = URL(fileURLWithPath: "/Applications/FluidVoice.app")
+        if FileManager.default.fileExists(atPath: installedURL.path) {
+            return installedURL
+        }
+        return Bundle.main.bundleURL
     }
 
     func restartApp() {
@@ -3263,6 +3515,7 @@ extension ContentView {
                 if nowTrusted && !self.accessibilityEnabled {
                     await MainActor.run {
                         DebugLogger.shared.info("Accessibility permission granted! Auto-restarting app...", source: "ContentView")
+                        self.finishAccessibilityPermissionFlow()
 
                         // Mark that we've auto-restarted to prevent loops
                         UserDefaults.standard.set(true, forKey: self.hasAutoRestartedForAccessibilityKey)
@@ -3277,9 +3530,135 @@ extension ContentView {
             }
         }
     }
+
+    private func stopAccessibilityPolling() {
+        self.accessibilityPollingTask?.cancel()
+        self.accessibilityPollingTask = nil
+    }
 }
 
 // swiftlint:enable type_body_length
+
+private struct AccessibilitySettingsFloatingGuideView: View {
+    let appURL: URL
+    let onReturnToApp: () -> Void
+    let onClose: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isArrowRaised = false
+    @State private var isTokenHovered = false
+
+    private var appIcon: NSImage {
+        NSWorkspace.shared.icon(forFile: self.appURL.path)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(FluidOnboardingLandingColors.blue)
+                    .offset(y: self.reduceMotion ? 0 : (self.isArrowRaised ? -8 : 4))
+                    .animation(
+                        self.reduceMotion ? nil : .easeInOut(duration: 0.85).repeatForever(autoreverses: true),
+                        value: self.isArrowRaised
+                    )
+
+                Text("Drag FluidVoice into the Accessibility apps list as shown")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    self.onClose()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.white.opacity(0.075)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .help("Close guide")
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    self.onReturnToApp()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(Color.white.opacity(0.075)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .help("Return to FluidVoice")
+
+                Image(nsImage: self.appIcon)
+                    .resizable()
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                Text("FluidVoice")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+
+                Spacer()
+
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.38))
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(self.isTokenHovered ? 0.095 : 0.055))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(self.isTokenHovered ? 0.16 : 0.08), lineWidth: 1)
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .onHover { isHovered in
+                if self.reduceMotion {
+                    self.isTokenHovered = isHovered
+                } else {
+                    withAnimation(.easeOut(duration: 0.14)) {
+                        self.isTokenHovered = isHovered
+                    }
+                }
+            }
+            .onDrag {
+                NSItemProvider(object: self.appURL as NSURL)
+            }
+            .accessibilityLabel("Drag FluidVoice to the Accessibility list")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.96))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            guard !self.reduceMotion else { return }
+            self.isArrowRaised = true
+        }
+    }
+}
 
 private extension ContentView {
     func reloadSettingsStateAfterBackupRestore() {

@@ -113,6 +113,51 @@ struct FluidOnboardingLandingBackdrop: View {
     }
 }
 
+struct FluidOnboardingCompactProgress: View {
+    let value: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let clampedValue = min(max(self.value, 0), 1)
+            let width = proxy.size.width
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.08))
+
+                Capsule()
+                    .fill(FluidOnboardingLandingColors.blue)
+                    .frame(width: width * clampedValue)
+                    .shadow(color: FluidOnboardingLandingColors.blue.opacity(0.38), radius: 8, x: 0, y: 0)
+            }
+        }
+        .frame(width: 292, height: 4)
+        .accessibilityHidden(true)
+    }
+}
+
+struct FluidOnboardingCompactAppIconMark: View {
+    private static let appIconImage: NSImage = NSApplication.shared.applicationIconImage
+        ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+
+    let size: CGFloat
+
+    init(size: CGFloat = 66) {
+        self.size = size
+    }
+
+    var body: some View {
+        Image(nsImage: Self.appIconImage)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: self.size, height: self.size)
+            .shadow(color: FluidOnboardingLandingColors.blue.opacity(0.45), radius: 24, x: 0, y: 0)
+            .shadow(color: Color.black.opacity(0.42), radius: 14, x: 0, y: 9)
+            .accessibilityHidden(true)
+    }
+}
+
 struct FluidOnboardingLandingHoverTracker: NSViewRepresentable {
     let onMove: (CGPoint, CGSize) -> Void
     let onExit: () -> Void
@@ -384,7 +429,7 @@ private struct FluidOnboardingPortalGlow: View {
     }
 }
 
-private enum FluidOnboardingLandingColors {
+enum FluidOnboardingLandingColors {
     static let blue = Color(red: 0.10, green: 0.46, blue: 1.0)
 }
 

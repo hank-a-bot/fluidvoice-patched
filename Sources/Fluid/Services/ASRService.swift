@@ -2549,6 +2549,20 @@ final class ASRService: ObservableObject {
         self.modelsExistOnDisk = false
     }
 
+    func clearModelCache(for model: SettingsStore.SpeechModel) async throws {
+        DebugLogger.shared.debug("Clearing model cache for \(model.displayName)", source: "ASRService")
+        let provider = self.getProvider(for: model)
+        try await provider.clearCache()
+
+        if model.requiresExternalArtifacts {
+            SettingsStore.shared.setExternalCoreMLArtifactsDirectory(nil, for: model)
+        }
+
+        guard SettingsStore.shared.selectedSpeechModel == model else { return }
+        self.resetTranscriptionProvider()
+        await self.checkIfModelsExistAsync()
+    }
+
     // MARK: - Timer-based Streaming Transcription (No VAD)
 
     private func startStreamingTranscription() {
