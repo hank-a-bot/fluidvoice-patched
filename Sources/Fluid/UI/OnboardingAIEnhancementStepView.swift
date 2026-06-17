@@ -31,7 +31,6 @@ struct OnboardingAIEnhancementStepView: View {
     @State private var privateAIActionTask: Task<Void, Never>?
     @State private var privateAIActionID = UUID()
     @State private var shouldShowTryout = false
-    @State private var hasPreparedExistingPrivateAI = false
     @State private var selectedExampleID = Self.examples[0].id
     @State private var activeRecordingExampleID: String?
     @State private var playgroundOutputs: [String: String] = [:]
@@ -200,10 +199,6 @@ struct OnboardingAIEnhancementStepView: View {
         PrivateAIModelDownloadProgressText.byteText(for: self.privateAISetupProgress)
     }
 
-    private var trimmedFinalText: String {
-        self.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var sectionTransition: AnyTransition {
         if self.reduceMotion {
             return .opacity
@@ -238,9 +233,6 @@ struct OnboardingAIEnhancementStepView: View {
                         self.footer
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height)
-                    .onAppear {
-                        self.prepareExistingPrivateAIStateIfNeeded()
-                    }
                     .onDisappear {
                         self.cancelPrivateAIAction()
                     }
@@ -513,6 +505,11 @@ struct OnboardingAIEnhancementStepView: View {
         let outputText = self.playgroundOutputs[example.id] ?? ""
         let hasOutput = !outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isListening = self.activeRecordingExampleID == example.id && self.isRunning
+        let allowsDecorativeShadow = !self.reduceMotion
+        let rawShadowRadius: CGFloat = allowsDecorativeShadow && isSelected ? 13 : 0
+        let arrowShadowRadius: CGFloat = allowsDecorativeShadow && isListening ? 12 : 0
+        let outputShadowRadius: CGFloat = allowsDecorativeShadow && (isSelected || isListening) ? (isSelected ? 14 : 8) : 0
+        let outputShadowOpacity: Double = allowsDecorativeShadow ? (isListening ? 0.24 : (isSelected ? 0.16 : 0)) : 0
         let rawShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         let outputShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
 
@@ -559,7 +556,7 @@ struct OnboardingAIEnhancementStepView: View {
                             rawShape
                                 .stroke(isSelected ? FluidOnboardingLandingColors.blue.opacity(0.48) : Color.white.opacity(0.070), lineWidth: isSelected ? 1.2 : 1)
                         )
-                        .shadow(color: FluidOnboardingLandingColors.blue.opacity(isSelected ? 0.13 : 0), radius: 13, x: 0, y: 4)
+                        .shadow(color: FluidOnboardingLandingColors.blue.opacity(allowsDecorativeShadow && isSelected ? 0.13 : 0), radius: rawShadowRadius, x: 0, y: 4)
                 )
                 .contentShape(rawShape)
             }
@@ -585,7 +582,7 @@ struct OnboardingAIEnhancementStepView: View {
                             Circle()
                                 .stroke(isSelected ? FluidOnboardingLandingColors.blue.opacity(0.28) : Color.white.opacity(0.10), lineWidth: 1)
                         )
-                        .shadow(color: FluidOnboardingLandingColors.blue.opacity(isListening ? 0.30 : 0), radius: 12, x: 0, y: 0)
+                        .shadow(color: FluidOnboardingLandingColors.blue.opacity(allowsDecorativeShadow && isListening ? 0.30 : 0), radius: arrowShadowRadius, x: 0, y: 0)
                 )
                 .matchedGeometryEffect(
                     id: "example-arrow-\(example.id)",
@@ -660,7 +657,7 @@ struct OnboardingAIEnhancementStepView: View {
                         outputShape
                             .stroke(FluidOnboardingLandingColors.blue.opacity(isListening ? 0.72 : (isSelected ? 0.54 : 0.22)), lineWidth: isSelected ? 1.3 : 1)
                     )
-                    .shadow(color: FluidOnboardingLandingColors.blue.opacity(isListening ? 0.24 : (isSelected ? 0.16 : 0.04)), radius: isSelected ? 14 : 8, x: 0, y: 5)
+                    .shadow(color: FluidOnboardingLandingColors.blue.opacity(outputShadowOpacity), radius: outputShadowRadius, x: 0, y: 5)
             )
             .contentShape(outputShape)
             .onTapGesture {
@@ -1029,8 +1026,6 @@ struct OnboardingAIEnhancementStepView: View {
         self.playgroundOutputs[targetExampleID] = text
         self.selectedExampleID = targetExampleID
         self.activeRecordingExampleID = nil
-        self.settings.onboardingPlaygroundValidated = true
-        self.settings.playgroundUsed = true
     }
 
     private func clearExampleOutput(_ example: EnhancementExample) {
@@ -1038,17 +1033,6 @@ struct OnboardingAIEnhancementStepView: View {
 
         if self.selectedExampleID == example.id {
             self.finalText = ""
-        }
-
-        if !self.hasAnyPlaygroundOutput {
-            self.settings.onboardingPlaygroundValidated = false
-            self.settings.playgroundUsed = false
-        }
-    }
-
-    private var hasAnyPlaygroundOutput: Bool {
-        self.playgroundOutputs.values.contains { output in
-            !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -1067,17 +1051,6 @@ struct OnboardingAIEnhancementStepView: View {
         } else {
             self.downloadPrivateAIModel()
         }
-    }
-
-    private func prepareExistingPrivateAIStateIfNeeded() {
-        guard self.isPrivateAIAvailable else {
-            self.shouldShowTryout = false
-            return
-        }
-
-        guard !self.hasPreparedExistingPrivateAI else { return }
-        self.hasPreparedExistingPrivateAI = true
-        self.shouldShowTryout = false
     }
 
     private func downloadPrivateAIModel() {

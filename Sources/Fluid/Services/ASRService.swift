@@ -930,7 +930,12 @@ final class ASRService: ObservableObject {
     /// - ASR models are not available
     /// - Transcription process fails
     /// Check debug logs for detailed error information.
-    func stop() async -> String {
+    /// - Parameter onCaptureStopped: Optional callback fired on the main actor
+    ///   after the audio engine has stopped but before the (potentially slow)
+    ///   final transcription pass. Use this for immediate stop cues that
+    ///   shouldn't wait on finalization. Only invoked when capture was actually
+    ///   running (i.e. not when `stop()` early-returns because `isRunning` is false).
+    func stop(onCaptureStopped: (@MainActor () -> Void)? = nil) async -> String {
         DebugLogger.shared.info("🛑 STOP() called - beginning shutdown sequence", source: "ASRService")
         self.lastCompletedAudioSnapshot = nil
         let stopStartedAt = Date().timeIntervalSince1970
@@ -976,6 +981,11 @@ final class ASRService: ObservableObject {
         DebugLogger.shared.debug("🛑 Calling engine.stop()...", source: "ASRService")
         self.engine.stop()
         DebugLogger.shared.debug("✅ Engine stopped", source: "ASRService")
+
+        // Capture has fully ended — invoke the callback so callers can play a
+        // stop cue or release capture-dependent UI without waiting on the
+        // (potentially slow) final transcription pass.
+        await MainActor.run { onCaptureStopped?() }
 
         // Recreate the engine instance instead of calling reset() to prevent format corruption
         // VoiceInk approach: tearing down and rebuilding ensures fresh, valid audio format on restart

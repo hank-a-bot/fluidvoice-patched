@@ -29,7 +29,7 @@ final class DictationE2ETests: XCTestCase {
 
     func testTranscriptionStartSound_noneOptionHasNoFile() {
         XCTAssertEqual(SettingsStore.TranscriptionStartSound.none.displayName, "None")
-        XCTAssertNil(SettingsStore.TranscriptionStartSound.none.soundFileName)
+        XCTAssertNil(SettingsStore.TranscriptionStartSound.none.startSoundFileName)
     }
 
     func testTranscriptionStartSound_legacyDisabledToggleMigratesToNone() {

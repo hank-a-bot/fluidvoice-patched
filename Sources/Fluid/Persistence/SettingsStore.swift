@@ -1699,10 +1699,6 @@ final class SettingsStore: ObservableObject {
             }
         }
 
-        var soundFileName: String? {
-            self.startSoundFileName
-        }
-
         var stopSoundFileName: String? {
             switch self {
             case .fluidSfx0: return "FV_end_0"

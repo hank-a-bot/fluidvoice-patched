@@ -45,8 +45,12 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
     private var pendingShowOperation: DispatchWorkItem?
     private var pendingHideOperation: DispatchWorkItem?
     private var pendingProcessingShowOperation: DispatchWorkItem?
+    // Show immediately so users see the processing state right away.
     private let processingVisualDelay: DispatchTimeInterval = .milliseconds(0)
-    private let processingHideDelay: DispatchTimeInterval = .milliseconds(0)
+    // Debounce the hide so a fast transcription doesn't flash the processing
+    // overlay for a single frame. 80ms is under the perception threshold but
+    // long enough to coalesce a quick show->hide cycle.
+    private let processingHideDelay: DispatchTimeInterval = .milliseconds(80)
 
     // Subscription for forwarding audio levels to expanded command notch
     private var expandedModeAudioSubscription: AnyCancellable?
@@ -307,7 +311,7 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
                     return
                 }
 
-                self.overlayBench("processing_hide_workitem_execute delayMs=0")
+                self.overlayBench("processing_hide_workitem_execute delayMs=80")
                 NotchOverlayManager.shared.hide()
                 self.overlayBench("processing_hide_workitem_return")
                 self.pendingHideOperation = nil
@@ -315,7 +319,7 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
             self.pendingHideOperation = hideItem
             DispatchQueue.main.asyncAfter(deadline: .now() + self.processingHideDelay, execute: hideItem)
             NotchOverlayManager.shared.setProcessing(false)
-            self.overlayBench("processing_forwarded processing=false hideDelayMs=0")
+            self.overlayBench("processing_forwarded processing=false hideDelayMs=80")
             return
         }
     }

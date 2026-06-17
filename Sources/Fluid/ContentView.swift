@@ -33,6 +33,16 @@ enum AIProcessingError: LocalizedError {
             return "AI returned an empty response"
         }
     }
+
+    /// Configuration errors the user can fix in AI Enhancement settings.
+    var isConfigurationError: Bool {
+        switch self {
+        case .noVerifiedProvider, .missingAPIKey, .missingModel:
+            return true
+        case .emptyResponse:
+            return false
+        }
+    }
 }
 
 // MARK: - Sidebar Item Enum
@@ -190,6 +200,7 @@ struct ContentView: View {
     @State private var accessibilityGuidePanel: NSPanel?
     @State private var accessibilityGuideMonitorTask: Task<Void, Never>?
     @State private var accessibilityGuideRequestID: UUID?
+    @State private var prewarmDictationTask: Task<Void, Never>?
 
     private var isRecordingAnyShortcutCapture: Bool {
         self.activeShortcutRecordingTarget != nil
@@ -578,6 +589,7 @@ struct ContentView: View {
                     if self.asr.isRunning {
                         Task { await self.asr.stopWithoutTranscription() }
                     }
+                    self.cancelPrewarmDictationIfNeeded()
                     self.clearActiveRecordingMode()
                     self.menuBarManager.setOverlayMode(.dictation)
                 }
@@ -596,6 +608,7 @@ struct ContentView: View {
                     if self.asr.isRunning {
                         Task { await self.asr.stopWithoutTranscription() }
                     }
+                    self.cancelPrewarmDictationIfNeeded()
                     self.clearActiveRecordingMode()
                     self.menuBarManager.setOverlayMode(.dictation)
                 }
@@ -614,6 +627,7 @@ struct ContentView: View {
                     if self.asr.isRunning {
                         Task { await self.asr.stopWithoutTranscription() }
                     }
+                    self.cancelPrewarmDictationIfNeeded()
                     self.clearActiveRecordingMode()
                     self.rewriteModeService.clearState()
                     self.menuBarManager.setOverlayMode(.dictation)
@@ -700,6 +714,7 @@ struct ContentView: View {
         }
         .onDisappear {
             Task { await self.asr.stopWithoutTranscription() }
+            self.cancelPrewarmDictationIfNeeded()
             // Note: Overlay lifecycle is now managed by MenuBarManager
             // Note: NotchContentState handlers capture self (a struct value copy) and are
             // intentionally kept alive so the overlay remains fully functional when the
@@ -1825,10 +1840,14 @@ struct ContentView: View {
         // The processing indicator will stay visible during this phase
         let asrStopStartedAt = ProcessInfo.processInfo.systemUptime
         self.appBench("asr_stop_call")
-        let transcribedText = await asr.stop()
+        // Play the stop cue as soon as the audio engine has stopped, before the
+        // (potentially slow) final transcription pass. Scoped to dictation only —
+        // Command/Edit modes call asr.stop() without this callback.
+        let transcribedText = await asr.stop(onCaptureStopped: {
+            TranscriptionSoundPlayer.shared.playStopSound()
+        })
         self.appBench("asr_stop_return elapsedMs=\(Int(((ProcessInfo.processInfo.systemUptime - asrStopStartedAt) * 1000).rounded()))")
         let audioSnapshot = self.asr.consumeLastCompletedAudioSnapshot()
-        TranscriptionSoundPlayer.shared.playStopSound()
         DebugLogger.shared.info(
             "Stop transcription result | chars=\(transcribedText.count) | empty=\(transcribedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)",
             source: "ContentView"
@@ -1947,7 +1966,17 @@ struct ContentView: View {
                     source: "ContentView"
                 )
                 aiFallbackReason = error.localizedDescription
-                NotificationService.showAIProcessingFallback(error: error.localizedDescription)
+                // Configuration errors are actionable — point the user at settings
+                // rather than just echoing the technical error string.
+                if let aiError = error as? AIProcessingError,
+                   aiError.isConfigurationError
+                {
+                    NotificationService.showAIProcessingFallback(
+                        error: "\(aiError.localizedDescription). Open AI Enhancement settings to configure a provider."
+                    )
+                } else {
+                    NotificationService.showAIProcessingFallback(error: error.localizedDescription)
+                }
                 finalText = transcribedText
             }
             let postProcessingLatencyMs = Int((Date().timeIntervalSince(postProcessingStart) * 1000).rounded())
@@ -2260,6 +2289,7 @@ struct ContentView: View {
         if self.asr.isRunning {
             DebugLogger.shared.info("Actions: stopping active recording before history action output", source: "ContentView")
             await self.asr.stopWithoutTranscription()
+            self.cancelPrewarmDictationIfNeeded()
         }
 
         let finalText = ASRService.applyGAAVFormatting(text)
@@ -2305,6 +2335,7 @@ struct ContentView: View {
         if self.asr.isRunning {
             DebugLogger.shared.info("Actions: stopping active recording before reprocess", source: "ContentView")
             await self.asr.stopWithoutTranscription()
+            self.cancelPrewarmDictationIfNeeded()
         }
 
         self.setActiveRecordingMode(.dictate)
@@ -2473,6 +2504,14 @@ struct ContentView: View {
         self.setActiveRecordingMode(.none)
     }
 
+    /// Cancel an in-flight prewarm. Called on abort / new recording start — NOT on
+    /// a normal stop, because AI post-processing runs after stop and benefits from
+    /// the warm prefix cache the prewarm prime.
+    private func cancelPrewarmDictationIfNeeded() {
+        self.prewarmDictationTask?.cancel()
+        self.prewarmDictationTask = nil
+    }
+
     private func handleLivePromptModeSwitch(_ mode: SettingsStore.PromptMode) {
         guard !NotchContentState.shared.isProcessing else { return }
         switch mode.normalized {
@@ -2588,7 +2627,10 @@ struct ContentView: View {
               DictationAIPostProcessingGate.isConfigured(for: slot, appBundleID: appBundleID)
         else { return }
 
-        Task {
+        // Cancel any prior prewarm so rapid start/stop doesn't queue duplicate
+        // actor work on PrivateAIIntegrationService.
+        self.prewarmDictationTask?.cancel()
+        self.prewarmDictationTask = Task {
             DebugLogger.shared.debug(
                 "ContentView: AI dictation prewarm started slot=\(slot.rawValue)",
                 source: "ContentView"
@@ -2598,6 +2640,9 @@ struct ContentView: View {
                 "AI dictation prewarm complete slot=\(slot.rawValue)",
                 source: "ContentView"
             )
+            if !Task.isCancelled {
+                self.prewarmDictationTask = nil
+            }
         }
     }
 
@@ -2868,6 +2913,7 @@ struct ContentView: View {
 
             // Reset recording mode flags
             if self.activeRecordingMode != .none {
+                self.cancelPrewarmDictationIfNeeded()
                 self.clearActiveRecordingMode()
                 handled = true
             }
@@ -2922,6 +2968,7 @@ struct ContentView: View {
         if self.asr.isRunning {
             DebugLogger.shared.debug("Cancel shortcut: cancelling ASR recording", source: "ContentView")
             Task { await self.asr.stopWithoutTranscription() }
+            self.cancelPrewarmDictationIfNeeded()
             handled = true
         }
 

@@ -1747,12 +1747,22 @@ private struct PromptSelectorAnchorReader: NSViewRepresentable {
     }
 }
 
-private final class BottomOverlayHostingView: NSHostingView<BottomOverlayView> {
-    private let pillShadowPadding: CGFloat = 26
+private enum PillShadowMetrics {
+    // Keep in sync with the pill shadow in BottomOverlayView.body.
+    static let radius: CGFloat = 10
+    static let yOffset: CGFloat = 4
+    // Hit-test inset must cover the visible shadow extent (radius + |offset|)
+    // plus a small margin so the shadow region doesn't intercept clicks.
+    static let hitTestInset: CGFloat = radius + abs(yOffset) + 12
+}
 
+private final class BottomOverlayHostingView: NSHostingView<BottomOverlayView> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         if SettingsStore.shared.overlaySize == .pill {
-            let visibleOverlayBounds = self.bounds.insetBy(dx: self.pillShadowPadding, dy: self.pillShadowPadding)
+            let visibleOverlayBounds = self.bounds.insetBy(
+                dx: PillShadowMetrics.hitTestInset,
+                dy: PillShadowMetrics.hitTestInset
+            )
             guard visibleOverlayBounds.contains(point) else { return nil }
         }
         return super.hitTest(point)
@@ -1779,6 +1789,7 @@ struct BottomOverlayView: View {
     @ObservedObject private var historyStore = TranscriptionHistoryStore.shared
     @ObservedObject private var settings = SettingsStore.shared
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHoveringModeChip = false
     @State private var isHoveringPromptChip = false
     @State private var isHoveringActionsChip = false
@@ -2795,16 +2806,15 @@ struct BottomOverlayView: View {
                         .fill(Color.black)
                         .shadow(
                             color: Color.black.opacity(self.isPillSize ? 0.32 : 0),
-                            radius: self.isPillSize ? 10 : 0,
+                            radius: self.isPillSize ? PillShadowMetrics.radius : 0,
                             x: 0,
-                            y: self.isPillSize ? 4 : 0
+                            y: self.isPillSize ? PillShadowMetrics.yOffset : 0
                         )
 
                     if self.isPillSize {
                         // Glossy border: a bright highlight that slowly rotates around the edge.
-                        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                            let seconds = timeline.date.timeIntervalSinceReferenceDate
-                            let angle = (seconds.truncatingRemainder(dividingBy: 6.0) / 6.0) * 360.0
+                        // Paused under reduce-motion to avoid continuous redraws on low-resource Macs.
+                        if self.reduceMotion {
                             RoundedRectangle(cornerRadius: self.layout.cornerRadius)
                                 .strokeBorder(
                                     AngularGradient(
@@ -2817,10 +2827,31 @@ struct BottomOverlayView: View {
                                             .init(color: .white.opacity(0.06), location: 1.00),
                                         ]),
                                         center: .center,
-                                        angle: .degrees(angle)
+                                        angle: .degrees(0)
                                     ),
                                     lineWidth: 1.2
                                 )
+                        } else {
+                            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                                let seconds = timeline.date.timeIntervalSinceReferenceDate
+                                let angle = (seconds.truncatingRemainder(dividingBy: 6.0) / 6.0) * 360.0
+                                RoundedRectangle(cornerRadius: self.layout.cornerRadius)
+                                    .strokeBorder(
+                                        AngularGradient(
+                                            gradient: Gradient(stops: [
+                                                .init(color: .white.opacity(0.06), location: 0.00),
+                                                .init(color: .white.opacity(0.55), location: 0.13),
+                                                .init(color: .white.opacity(0.10), location: 0.30),
+                                                .init(color: .white.opacity(0.03), location: 0.55),
+                                                .init(color: .white.opacity(0.22), location: 0.80),
+                                                .init(color: .white.opacity(0.06), location: 1.00),
+                                            ]),
+                                            center: .center,
+                                            angle: .degrees(angle)
+                                        ),
+                                        lineWidth: 1.2
+                                    )
+                            }
                         }
                     } else {
                         // Inner border
