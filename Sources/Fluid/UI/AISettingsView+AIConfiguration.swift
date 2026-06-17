@@ -960,26 +960,11 @@ extension AIEnhancementSettingsView {
     }
 
     private static func downloadButtonText(progress: PrivateAIModelDownloadProgress?) -> String {
-        guard let fraction = progress?.fractionCompleted else { return "Downloading..." }
-        return "Downloading \(Int(fraction * 100))%"
+        PrivateAIModelDownloadProgressText.buttonTitle(for: progress)
     }
 
     private static func downloadProgressText(_ progress: PrivateAIModelDownloadProgress?) -> String {
-        guard let progress else { return "Downloading..." }
-        let written = Self.byteCountText(progress.totalBytesWritten)
-        guard let expected = progress.totalBytesExpected, expected > 0 else {
-            return "\(written) downloaded"
-        }
-
-        let expectedText = Self.byteCountText(expected)
-        if let fraction = progress.fractionCompleted {
-            return "\(written) of \(expectedText) (\(Int(fraction * 100))%)"
-        }
-        return "\(written) of \(expectedText)"
-    }
-
-    private static func byteCountText(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        PrivateAIModelDownloadProgressText.detailText(for: progress)
     }
 
     private static func elapsedMilliseconds(since start: ContinuousClock.Instant) -> Int {

@@ -1978,6 +1978,14 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var onboardingPlaygroundSkipped: Bool {
+        get { self.defaults.bool(forKey: Keys.onboardingPlaygroundSkipped) }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.onboardingPlaygroundSkipped)
+        }
+    }
+
     var onboardingSelectedLanguageID: String {
         get {
             let stored = self.defaults.string(forKey: Keys.onboardingSelectedLanguageID)?
@@ -2037,12 +2045,14 @@ final class SettingsStore: ObservableObject {
             self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
             self.defaults.set(false, forKey: Keys.onboardingAISkipped)
             self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+            self.defaults.set(false, forKey: Keys.onboardingPlaygroundSkipped)
             self.defaults.set("en", forKey: Keys.onboardingSelectedLanguageID)
         } else {
             self.defaults.set(true, forKey: Keys.onboardingCompleted)
             self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
             self.defaults.set(false, forKey: Keys.onboardingAISkipped)
             self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+            self.defaults.set(false, forKey: Keys.onboardingPlaygroundSkipped)
             self.defaults.set("en", forKey: Keys.onboardingSelectedLanguageID)
         }
     }
@@ -2053,6 +2063,7 @@ final class SettingsStore: ObservableObject {
         self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
         self.defaults.set(false, forKey: Keys.onboardingAISkipped)
         self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+        self.defaults.set(false, forKey: Keys.onboardingPlaygroundSkipped)
         self.defaults.set("en", forKey: Keys.onboardingSelectedLanguageID)
         self.defaults.set(false, forKey: Keys.playgroundUsed)
     }
@@ -2956,7 +2967,10 @@ final class SettingsStore: ObservableObject {
     }
 
     private func verifiedProviderIDsForCurrentConfiguration() -> [String] {
-        let providerIDs = ModelRepository.builtInProviderIDs + self.savedProviders.map(\.id)
+        var providerIDs = ModelRepository.builtInProviderIDs + self.savedProviders.map(\.id)
+        if PrivateFeatures.privateAIProvider {
+            providerIDs.append(PrivateAIProviderFeature.shared.providerID)
+        }
         return providerIDs.filter { self.isVerifiedProviderForCurrentConfiguration($0) }
     }
 
@@ -3061,6 +3075,11 @@ final class SettingsStore: ObservableObject {
         guard !trimmed.isEmpty else { return "" }
         let providerID = trimmed
         if ModelRepository.shared.isBuiltIn(providerID) { return providerID }
+        if PrivateFeatures.privateAIProvider,
+           providerID == PrivateAIProviderFeature.shared.providerID
+        {
+            return providerID
+        }
 
         let savedProviderID = providerID.hasPrefix("custom:") ?
             String(providerID.dropFirst("custom:".count)) : providerID
@@ -3973,6 +3992,7 @@ private extension SettingsStore {
         static let onboardingCurrentStep = "OnboardingCurrentStep"
         static let onboardingAISkipped = "OnboardingAISkipped"
         static let onboardingPlaygroundValidated = "OnboardingPlaygroundValidated"
+        static let onboardingPlaygroundSkipped = "OnboardingPlaygroundSkipped"
         static let onboardingSelectedLanguageID = "OnboardingSelectedLanguageID"
 
         // Command Mode Keys

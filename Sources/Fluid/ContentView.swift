@@ -1064,6 +1064,12 @@ struct ContentView: View {
             finishOnboarding: {
                 self.completeOnboardingIfPossible()
             },
+            finishOnboardingAtGettingStarted: {
+                self.completeOnboardingIfPossible(selecting: .welcome)
+            },
+            openAIEnhancementSettingsFromOnboarding: {
+                self.completeOnboardingForAIProviderSetup()
+            },
             openAccessibilitySettings: self.openAccessibilitySettings,
             restartApp: self.restartApp,
             menuBarManager: self.menuBarManager,
@@ -2163,8 +2169,10 @@ struct ContentView: View {
 
     private var isOnboardingPlaygroundStepActive: Bool {
         let onboardingPlaygroundStep = 4
+        let onboardingAIEnhancementStep = 5
         return !self.settings.onboardingCompleted &&
-            self.settings.onboardingCurrentStep == onboardingPlaygroundStep
+            (self.settings.onboardingCurrentStep == onboardingPlaygroundStep ||
+                self.settings.onboardingCurrentStep == onboardingAIEnhancementStep)
     }
 
     private func currentDictationOutputRouteForHotkeyStop() -> DictationOutputRoute {
@@ -3117,6 +3125,7 @@ extension ContentView {
         if self.isOnboardingPlaygroundStepActive {
             self.asr.finalText = ""
             self.settings.onboardingPlaygroundValidated = false
+            self.settings.onboardingPlaygroundSkipped = false
             self.settings.playgroundUsed = false
             self.playgroundUsed = false
         }
@@ -3198,15 +3207,7 @@ extension ContentView {
     }
 
     private var onboardingPlaygroundReady: Bool {
-        self.settings.onboardingPlaygroundValidated
-    }
-
-    private var canCompleteOnboarding: Bool {
-        self.onboardingVoiceModelReady &&
-            self.onboardingMicrophoneReady &&
-            self.onboardingAccessibilityReady &&
-            self.onboardingAIReady &&
-            self.onboardingPlaygroundReady
+        self.settings.onboardingPlaygroundValidated || self.settings.onboardingPlaygroundSkipped
     }
 
     @MainActor
@@ -3223,13 +3224,64 @@ extension ContentView {
 // MARK: - ContentView Accessibility & Lifecycle Helpers
 
 extension ContentView {
-    func completeOnboardingIfPossible() {
-        guard self.canCompleteOnboarding else { return }
+    func completeOnboardingIfPossible(selecting target: SidebarItem? = nil) {
+        let missingRequirements = self.missingOnboardingCompletionRequirements()
+        guard missingRequirements.isEmpty else {
+            self.presentOnboardingCompletionBlocked(missingRequirements)
+            return
+        }
 
+        self.completeOnboarding(selecting: target)
+    }
+
+    func completeOnboardingForAIProviderSetup() {
+        let missingRequirements = self.missingOnboardingCompletionRequirements(allowsAIConfiguration: true)
+        guard missingRequirements.isEmpty else {
+            self.presentOnboardingCompletionBlocked(missingRequirements)
+            return
+        }
+
+        self.completeOnboarding(selecting: .aiEnhancements)
+    }
+
+    private func completeOnboarding(selecting target: SidebarItem? = nil) {
         self.settings.onboardingCompleted = true
 
         let isOnboarded = self.asr.isAsrReady || self.asr.modelsExistOnDisk
-        self.selectedSidebarItem = isOnboarded ? .preferences : .welcome
+        self.selectedSidebarItem = target ?? (isOnboarded ? .preferences : .welcome)
+    }
+
+    private func missingOnboardingCompletionRequirements(allowsAIConfiguration: Bool = false) -> [String] {
+        var missing: [String] = []
+
+        if !self.onboardingVoiceModelReady {
+            missing.append("voice model")
+        }
+        if !self.onboardingMicrophoneReady {
+            missing.append("microphone access")
+        }
+        if !self.onboardingAccessibilityReady {
+            missing.append("Accessibility access")
+        }
+        if !allowsAIConfiguration, !self.onboardingAIReady {
+            missing.append("AI choice")
+        }
+        if !self.onboardingPlaygroundReady {
+            missing.append("test or skip")
+        }
+
+        return missing
+    }
+
+    private func presentOnboardingCompletionBlocked(_ missingRequirements: [String]) {
+        let missingText = missingRequirements.joined(separator: ", ")
+        DebugLogger.shared.warning(
+            "Onboarding completion blocked; missing=\(missingText)",
+            source: "ContentView"
+        )
+        self.asr.errorTitle = "Setup Isn't Complete"
+        self.asr.errorMessage = "Finish \(missingText) to continue."
+        self.asr.showError = true
     }
 
     func labelFor(status: AVAuthorizationStatus) -> String {

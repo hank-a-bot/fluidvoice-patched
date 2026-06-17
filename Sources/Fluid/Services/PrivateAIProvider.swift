@@ -20,6 +20,45 @@ struct PrivateAIModelDownloadProgress: Sendable, Equatable {
     }
 }
 
+enum PrivateAIModelDownloadProgressText {
+    static func buttonTitle(for progress: PrivateAIModelDownloadProgress?) -> String {
+        guard let fraction = progress?.fractionCompleted else { return "Downloading" }
+        return "Downloading \(Int(fraction * 100))%"
+    }
+
+    static func statusText(for progress: PrivateAIModelDownloadProgress?) -> String {
+        guard let progress else {
+            return "Starting download. This can take a few minutes."
+        }
+        guard let fraction = progress.fractionCompleted else {
+            return "Downloading. This can take a few minutes."
+        }
+        return "Downloading \(Int(fraction * 100))%. This can take a few minutes."
+    }
+
+    static func byteText(for progress: PrivateAIModelDownloadProgress?) -> String? {
+        guard let progress else { return nil }
+
+        let written = Self.byteCountText(progress.totalBytesWritten)
+        guard let expected = progress.totalBytesExpected, expected > 0 else {
+            return "\(written) downloaded"
+        }
+
+        return "\(written) of \(Self.byteCountText(expected))"
+    }
+
+    static func detailText(for progress: PrivateAIModelDownloadProgress?) -> String {
+        guard let progress else { return "Starting download..." }
+        guard let byteText = Self.byteText(for: progress) else { return "Downloading..." }
+        guard let fraction = progress.fractionCompleted else { return byteText }
+        return "\(byteText) (\(Int(fraction * 100))%)"
+    }
+
+    private static func byteCountText(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
 typealias PrivateAIModelDownloadProgressHandler = @Sendable (PrivateAIModelDownloadProgress) async -> Void
 
 struct PrivateAIRegisteredModel: Sendable, Codable, Hashable, Identifiable {

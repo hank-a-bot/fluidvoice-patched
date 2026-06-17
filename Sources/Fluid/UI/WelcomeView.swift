@@ -584,6 +584,8 @@ struct OnboardingFlowView: View {
     let accessibilitySetupInProgress: Bool
     let markAISkipped: () -> Void
     let finishOnboarding: () -> Void
+    let finishOnboardingAtGettingStarted: () -> Void
+    let openAIEnhancementSettingsFromOnboarding: () -> Void
     let openAccessibilitySettings: () -> Void
     let restartApp: () -> Void
     let menuBarManager: MenuBarManager
@@ -611,6 +613,7 @@ struct OnboardingFlowView: View {
 
     private enum OnboardingFooterButton {
         case back
+        case skip
         case next
     }
 
@@ -685,15 +688,6 @@ struct OnboardingFlowView: View {
 
     private var compactProgressValue: Double {
         Double(self.step.rawValue + 1) / Double(Step.allCases.count)
-    }
-
-    private var usesCinematicStep: Bool {
-        switch self.step {
-        case .landing, .language, .voiceModel, .permissions, .playground:
-            return true
-        case .aiEnhancement:
-            return false
-        }
     }
 
     private var popularOnboardingLanguages: [VoiceEngineLanguage] {
@@ -816,7 +810,7 @@ struct OnboardingFlowView: View {
     }
 
     private var isPlaygroundReady: Bool {
-        self.settings.onboardingPlaygroundValidated
+        self.settings.onboardingPlaygroundValidated || self.settings.onboardingPlaygroundSkipped
     }
 
     private var onboardingShortcutDisplay: String {
@@ -864,17 +858,8 @@ struct OnboardingFlowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if self.usesCinematicStep {
-                self.stepContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            } else {
-                self.header
-                Divider()
-                self.stepContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                Divider()
-                self.footer
-            }
+            self.stepContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .background {
             ZStack {
@@ -1334,7 +1319,10 @@ struct OnboardingFlowView: View {
     private func cinematicFooter(
         continueTitle: String,
         canContinue: Bool,
-        continueAction: @escaping () -> Void
+        continueAction: @escaping () -> Void,
+        skipTitle: String? = nil,
+        canSkip: Bool = false,
+        skipAction: (() -> Void)? = nil
     ) -> some View {
         let canNavigateBack = !self.isModelPreparationInProgress && !self.asr.isRunning && !self.isRecordingAnyShortcut
 
@@ -1349,6 +1337,16 @@ struct OnboardingFlowView: View {
             .keyboardShortcut(.cancelAction)
 
             Spacer()
+
+            if let skipTitle, let skipAction {
+                self.cinematicFooterButton(
+                    title: skipTitle,
+                    kind: .skip,
+                    isEnabled: canSkip
+                ) {
+                    skipAction()
+                }
+            }
 
             self.cinematicFooterButton(
                 title: continueTitle,
@@ -1682,21 +1680,29 @@ struct OnboardingFlowView: View {
     }
 
     private var aiEnhancementStep: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: self.isAIReady ? "checkmark.circle.fill" : "sparkles")
-                    .foregroundStyle(self.isAIReady ? self.theme.palette.success : self.theme.palette.accent)
-                Text(self.isAIReady
-                    ? "AI enhancement is ready (or skipped)"
-                    : "Configure AI enhancement or skip to continue")
-                    .font(self.theme.typography.bodySmallStrong)
-                    .foregroundStyle(self.isAIReady ? self.theme.palette.success : .secondary)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-
-            AIEnhancementSettingsScreen(menuBarManager: self.menuBarManager, theme: self.theme)
-        }
+        OnboardingAIEnhancementStepView(
+            finalText: Binding(
+                get: { self.asr.finalText },
+                set: { self.asr.finalText = $0 }
+            ),
+            progressValue: self.compactProgressValue,
+            glowCenter: self.landingGlowCenter,
+            language: self.selectedOnboardingLanguage,
+            shortcutDisplay: self.onboardingShortcutDisplay,
+            isTestReady: self.isPlaygroundReady,
+            isRunning: self.asr.isRunning,
+            isRecordingShortcut: self.activeShortcutRecordingTarget == .primaryDictation,
+            shortcutRecordingMessage: self.activeShortcutRecordingTarget == .primaryDictation ? self.shortcutRecordingMessage : nil,
+            onGlowMove: self.updateLandingGlow(location:in:),
+            onGlowExit: self.resetLandingGlow,
+            onBack: self.goBack,
+            onSkip: {
+                self.markAISkipped()
+                self.finishOnboardingAtGettingStarted()
+            },
+            onUseAIProvider: self.openAIEnhancementSettingsFromOnboarding,
+            onFinishSetup: self.finishOnboardingAtGettingStarted
+        )
     }
 
     private var playgroundStep: some View {
@@ -1749,10 +1755,17 @@ struct OnboardingFlowView: View {
 
                     self.cinematicFooter(
                         continueTitle: "Continue",
-                        canContinue: self.canContinue
-                    ) {
-                        self.handlePrimaryAction()
-                    }
+                        canContinue: self.canContinue,
+                        continueAction: {
+                            self.handlePrimaryAction()
+                        },
+                        skipTitle: "Skip",
+                        canSkip: !self.asr.isRunning && !self.isRecordingAnyShortcut,
+                        skipAction: {
+                            self.settings.onboardingPlaygroundSkipped = true
+                            self.goNext()
+                        }
+                    )
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
@@ -1768,37 +1781,6 @@ struct OnboardingFlowView: View {
                 .accessibilityHidden(true)
             }
         }
-    }
-
-    private var footer: some View {
-        let canNavigateBack = !self.isModelPreparationInProgress
-
-        return HStack(spacing: 10) {
-            if self.step.rawValue > 0 {
-                Button("Back") {
-                    self.goBack()
-                }
-                .fluidOnboardingSecondaryButton()
-                .disabled(!canNavigateBack)
-            }
-
-            Spacer()
-
-            if self.step == .aiEnhancement {
-                Button("Skip this step") {
-                    self.markAISkipped()
-                    self.finishOnboarding()
-                }
-                .fluidOnboardingSecondaryButton()
-            }
-
-            Button(self.primaryButtonTitle) {
-                self.handlePrimaryAction()
-            }
-            .fluidOnboardingProminentButton()
-            .disabled(!self.canContinue)
-        }
-        .padding(20)
     }
 
     private var microphoneActionButtonTitle: String {
@@ -2557,6 +2539,7 @@ struct OnboardingFlowView: View {
 
     private func resetTryoutValidationForSetupChange() {
         self.settings.onboardingPlaygroundValidated = false
+        self.settings.onboardingPlaygroundSkipped = false
         self.settings.playgroundUsed = false
         self.asr.finalText = ""
     }

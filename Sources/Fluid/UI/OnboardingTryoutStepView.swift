@@ -9,6 +9,7 @@ struct OnboardingTryoutStepView: View {
     let isRunning: Bool
     let isRecordingShortcut: Bool
     let shortcutRecordingMessage: String?
+    let footerHint: String?
     let onToggleShortcut: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,6 +19,28 @@ struct OnboardingTryoutStepView: View {
     @State private var isShortcutKeyPressed = false
     @State private var isShortcutGlowActive = false
     @State private var shortcutAnimationRevision = 0
+
+    init(
+        finalText: Binding<String>,
+        language: VoiceEngineLanguage,
+        shortcutDisplay: String,
+        isReady: Bool,
+        isRunning: Bool,
+        isRecordingShortcut: Bool,
+        shortcutRecordingMessage: String?,
+        footerHint: String? = nil,
+        onToggleShortcut: @escaping () -> Void
+    ) {
+        self._finalText = finalText
+        self.language = language
+        self.shortcutDisplay = shortcutDisplay
+        self.isReady = isReady
+        self.isRunning = isRunning
+        self.isRecordingShortcut = isRecordingShortcut
+        self.shortcutRecordingMessage = shortcutRecordingMessage
+        self.footerHint = footerHint
+        self.onToggleShortcut = onToggleShortcut
+    }
 
     private static let languageExamples: [String: [String]] = [
         "ar": [
@@ -120,7 +143,7 @@ struct OnboardingTryoutStepView: View {
         VStack(spacing: 12) {
             self.keyboardCard
 
-            Text("Feels slow or inaccurate? Go back and try another model for \(self.language.displayName).")
+            Text(self.footerHint ?? "Feels slow or inaccurate? Go back and try another model for \(self.language.displayName).")
                 .font(self.theme.typography.captionStrong)
                 .foregroundStyle(Color.white.opacity(0.44))
                 .multilineTextAlignment(.center)
@@ -241,7 +264,6 @@ struct OnboardingTryoutStepView: View {
     }
 
     private var editorPanel: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         let examples = Array(self.exampleTexts.prefix(1))
 
         return VStack(alignment: .leading, spacing: 10) {

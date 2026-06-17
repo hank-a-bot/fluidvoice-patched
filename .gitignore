@@ -212,6 +212,9 @@ assets/
 .swiftpm/
 scripts/
 
+# Benchmark / eval reports (local-only)
+benchmark_reports/
+
 **.profraw
 icon_work/
 sample/

@@ -76,6 +76,43 @@ actor PrivateAIIntegrationService {
         self.provider.isModelInstalled(model)
     }
 
+    nonisolated static func canRemoveInstalledModel(_ model: PrivateAIRegisteredModel) -> Bool {
+        guard let path = self.provider.localModelPath(for: model) else {
+            return false
+        }
+
+        let targetURL = URL(fileURLWithPath: path).standardizedFileURL
+        let modelDirectoryURL = self.modelDirectoryURL.standardizedFileURL
+        let expectedURL = self.expectedLocalModelURL(for: model).standardizedFileURL
+        let targetPath = targetURL.path
+        let modelDirectoryPath = modelDirectoryURL.path
+
+        return targetPath == expectedURL.path || targetPath.hasPrefix(modelDirectoryPath + "/")
+    }
+
+    nonisolated static func removeInstalledModel(_ model: PrivateAIRegisteredModel) throws {
+        guard let path = self.provider.localModelPath(for: model) else {
+            return
+        }
+
+        let targetURL = URL(fileURLWithPath: path).standardizedFileURL
+        let modelDirectoryURL = self.modelDirectoryURL.standardizedFileURL
+        let expectedURL = self.expectedLocalModelURL(for: model).standardizedFileURL
+        let targetPath = targetURL.path
+        let modelDirectoryPath = modelDirectoryURL.path
+
+        guard targetPath == expectedURL.path || targetPath.hasPrefix(modelDirectoryPath + "/") else {
+            throw PrivateAIModelRemovalError(message: "This model is not in FluidVoice's model folder.")
+        }
+
+        try FileManager.default.removeItem(at: targetURL)
+    }
+
+    func unloadAndRemoveInstalledModel(_ model: PrivateAIRegisteredModel, reason: String) async throws {
+        await self.unloadCachedRuntime(reason: reason)
+        try Self.removeInstalledModel(model)
+    }
+
     nonisolated static func prepareModel(
         _ model: PrivateAIRegisteredModel,
         progressHandler: PrivateAIModelDownloadProgressHandler? = nil
@@ -117,6 +154,14 @@ actor PrivateAIIntegrationService {
         context: AppContext
     ) async throws -> EnhancementResult {
         try await Self.provider.enhanceDictation(inputText, runtime: runtime, context: context)
+    }
+}
+
+private struct PrivateAIModelRemovalError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        self.message
     }
 }
 
