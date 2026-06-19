@@ -152,6 +152,7 @@ protocol PrivateAIIntegrationProviding: Sendable {
     func loadModel(_ model: PrivateAIRegisteredModel) async throws -> PrivateAIStatus
     func prewarmDictation() async
     func unloadCachedRuntime(reason: String) async
+    func shutdownForTermination() async
     func enhanceDictation(
         _ inputText: String,
         runtime: PrivateAIIntegrationService.RuntimeConfiguration,
@@ -168,6 +169,10 @@ extension PrivateAIIntegrationProviding {
     /// (the local FluidIntelligence bridge) override this to load and prime the
     /// dictation runtime ahead of the first request.
     func prewarmDictation() async {}
+
+    func shutdownForTermination() async {
+        await self.unloadCachedRuntime(reason: "termination")
+    }
 }
 
 enum PrivateAIProviderRegistry {

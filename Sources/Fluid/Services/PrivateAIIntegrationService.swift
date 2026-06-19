@@ -148,6 +148,10 @@ actor PrivateAIIntegrationService {
         await Self.provider.unloadCachedRuntime(reason: reason)
     }
 
+    func shutdownForTermination() async {
+        await Self.provider.shutdownForTermination()
+    }
+
     func enhanceDictation(
         _ inputText: String,
         runtime: RuntimeConfiguration,

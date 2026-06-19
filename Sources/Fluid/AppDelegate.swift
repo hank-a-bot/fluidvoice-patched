@@ -64,10 +64,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationWillTerminate(_ notification: Notification) {
         DebugLogger.shared.info("Application will terminate", source: "AppDelegate")
+        self.shutdownPrivateAIRuntimeForTermination()
         LocalAPIServer.shared.stop()
         // Clean up the update check timer
         self.updateCheckTimer?.invalidate()
         self.updateCheckTimer = nil
+    }
+
+    private func shutdownPrivateAIRuntimeForTermination() {
+        var didFinishShutdown = false
+        Task { @MainActor in
+            await PrivateAIIntegrationService.shared.shutdownForTermination()
+            didFinishShutdown = true
+        }
+
+        let deadline = Date().addingTimeInterval(8)
+        while !didFinishShutdown, Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
+
+        if !didFinishShutdown {
+            DebugLogger.shared.warning(
+                "Timed out waiting for private AI runtime shutdown during termination",
+                source: "AppDelegate"
+            )
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
