@@ -237,18 +237,35 @@ extension HotkeyShortcut {
         return Self.modifierFlag(forKeyCode: self.keyCode)
     }
 
-    /// True when two modifier-only shortcuts would overlap — either identical
-    /// or one is a subset of the other's modifiers (e.g. ⌥ vs ⌥+⇧). Prevents
-    /// the shared `modifierOnlyKeyDown` release race in GlobalHotkeyManager.
+    /// True when shortcut presses can race because one begins as the other's modifier prefix.
     func conflictsWith(_ other: HotkeyShortcut) -> Bool {
-        guard self.isModifierOnlyShortcut, other.isModifierOnlyShortcut else { return false }
+        if self.isModifierOnlyShortcut, other.isModifierOnlyShortcut {
+            let lhs = Set(self.normalizedModifierKeyCodes)
+            let rhs = Set(other.normalizedModifierKeyCodes)
 
-        let lhs = Set(self.normalizedModifierKeyCodes)
-        let rhs = Set(other.normalizedModifierKeyCodes)
+            guard !lhs.isEmpty, !rhs.isEmpty else { return false }
 
-        guard !lhs.isEmpty, !rhs.isEmpty else { return false }
+            return lhs.isSubset(of: rhs) || rhs.isSubset(of: lhs)
+        }
 
-        return lhs.isSubset(of: rhs) || rhs.isSubset(of: lhs)
+        if self.isMouseShortcut, other.isModifierOnlyShortcut {
+            return self.mouseModifiersOverlap(modifierOnlyShortcut: other)
+        }
+
+        if other.isMouseShortcut, self.isModifierOnlyShortcut {
+            return other.mouseModifiersOverlap(modifierOnlyShortcut: self)
+        }
+
+        return false
+    }
+
+    private func mouseModifiersOverlap(modifierOnlyShortcut: HotkeyShortcut) -> Bool {
+        guard self.isMouseShortcut,
+              let expectedModifiers = modifierOnlyShortcut.expectedModifierFlags,
+              !expectedModifiers.isEmpty
+        else { return false }
+
+        return expectedModifiers.isSubset(of: self.relevantModifierFlags)
     }
 
     var isModifierOnlyShortcut: Bool {

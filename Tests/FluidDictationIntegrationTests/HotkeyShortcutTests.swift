@@ -72,6 +72,16 @@ final class HotkeyShortcutTests: XCTestCase {
         XCTAssertNotEqual(mouseShortcut, keyboardShortcut)
     }
 
+    func testModifiedMouseShortcutConflictsWithModifierOnlyShortcut() {
+        let optionOnly = HotkeyShortcut(keyCode: 61, modifierFlags: [])
+        let modifiedClick = HotkeyShortcut(mouseButton: 0, modifierFlags: [.option])
+        let unmodifiedSideButton = HotkeyShortcut(mouseButton: 3, modifierFlags: [])
+
+        XCTAssertTrue(modifiedClick.conflictsWith(optionOnly))
+        XCTAssertTrue(optionOnly.conflictsWith(modifiedClick))
+        XCTAssertFalse(unmodifiedSideButton.conflictsWith(optionOnly))
+    }
+
     func testPrimaryDictationShortcutsFallbackToLegacyShortcut() throws {
         try self.withRestoredDefaults(keys: [self.legacyHotkeyShortcutKey, self.primaryDictationShortcutsKey]) {
             let legacyShortcut = HotkeyShortcut(keyCode: 12, modifierFlags: [.option])

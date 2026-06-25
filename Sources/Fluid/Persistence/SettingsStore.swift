@@ -30,6 +30,7 @@ final class SettingsStore: ObservableObject {
         self.migrateDictationPromptProfilesIfNeeded()
         self.migrateLegacyDictationAIPreferenceIfNeeded()
         self.migrateSecondaryPromptShortcutIfNeeded()
+        self.retireLegacySecondaryPromptShortcutIfNeeded()
         self.normalizePromptSelectionsIfNeeded()
         self.normalizeProviderSelectionForCurrentVerificationState()
         self.enforceOnboardingGenerationIfNeeded()
@@ -2981,6 +2982,16 @@ final class SettingsStore: ObservableObject {
         self.defaults.set(true, forKey: Keys.secondaryPromptShortcutRemoved)
     }
 
+    private func retireLegacySecondaryPromptShortcutIfNeeded() {
+        guard self.defaults.bool(forKey: Keys.legacySecondaryPromptShortcutRetired) == false else { return }
+
+        self.defaults.set(false, forKey: Keys.promptModeShortcutEnabled)
+        self.defaults.set(true, forKey: Keys.secondaryDictationPromptOff)
+        self.defaults.removeObject(forKey: Keys.promptModeHotkeyShortcut)
+        self.defaults.removeObject(forKey: Keys.promptModeSelectedPromptID)
+        self.defaults.set(true, forKey: Keys.legacySecondaryPromptShortcutRetired)
+    }
+
     private func normalizePromptSelectionsIfNeeded() {
         if self.defaults.object(forKey: Keys.secondaryDictationPromptOff) == nil {
             self.defaults.set(false, forKey: Keys.secondaryDictationPromptOff)
@@ -4311,6 +4322,7 @@ private extension SettingsStore {
         static let promptModeSelectedPromptID = "PromptModeSelectedPromptID"
         static let secondaryDictationPromptOff = "SecondaryDictationPromptOff"
         static let secondaryPromptShortcutRemoved = "SecondaryPromptShortcutRemoved"
+        static let legacySecondaryPromptShortcutRetired = "LegacySecondaryPromptShortcutRetired"
         static let dictationPromptConfigurations = "DictationPromptConfigurations"
 
         // Rewrite Mode Keys
