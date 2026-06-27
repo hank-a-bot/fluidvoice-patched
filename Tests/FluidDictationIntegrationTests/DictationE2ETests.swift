@@ -113,6 +113,7 @@ final class DictationE2ETests: XCTestCase {
         XCTAssertEqual(state.replacements.first?.replacement, "FluidVoice")
         XCTAssertEqual(state.customWords.map(\.text), ["FluidVoice", "Barath"])
         XCTAssertEqual(state.customWords.map(\.weight), [10.0, 10.0])
+        XCTAssertEqual(state.customWords.map(\.aliases), [[], []])
     }
 
     func testDictionaryTransferImport_mergeDedupesAndMovesDuplicateTriggers() throws {
@@ -295,7 +296,8 @@ final class DictationE2ETests: XCTestCase {
 
         XCTAssertEqual(state.replacements.count, 0)
         XCTAssertEqual(state.customWords.map(\.text), ["FluidVoice", "GEMBA-E"])
-        XCTAssertEqual(state.customWords.map(\.weight), [10.0, 10.0])
+        XCTAssertEqual(state.customWords.map(\.weight), [13.0, 10.0])
+        XCTAssertEqual(state.customWords.map(\.aliases), [[], []])
     }
 
     func testDictionaryTransferImport_acceptsLocalAPICustomWordsResponse() throws {
@@ -325,6 +327,8 @@ final class DictationE2ETests: XCTestCase {
 
         XCTAssertEqual(state.replacements.count, 0)
         XCTAssertEqual(state.customWords.map(\.text), ["FluidVoice", "Barath"])
+        XCTAssertEqual(state.customWords.map(\.weight), [10.0, 10.0])
+        XCTAssertEqual(state.customWords.map(\.aliases), [[], []])
     }
 
     func testDictationEndToEnd_whisperTiny_transcribesFixture() async throws {
@@ -804,7 +808,7 @@ final class DictationE2ETests: XCTestCase {
     }
 
     func testLooksLikeHTML_rejectsLeadingWhitespaceAndBOMVariants() {
-        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+        let bom: [UInt8] = [0xef, 0xbb, 0xbf]
 
         // Leading ASCII whitespace before the markup token.
         XCTAssertTrue(HuggingFaceModelDownloader.looksLikeHTML(Data("   \n\t<!DOCTYPE html>".utf8)))
@@ -828,9 +832,9 @@ final class DictationE2ETests: XCTestCase {
         // MIL program text (`model.mil`).
         XCTAssertFalse(HuggingFaceModelDownloader.looksLikeHTML(Data("program(1.0)\n[buildInfo = ...]".utf8)))
         // Binary CoreML / Mach-O magic prefix.
-        XCTAssertFalse(HuggingFaceModelDownloader.looksLikeHTML(Data([0xCF, 0xFA, 0xED, 0xFE, 0x07, 0x00])))
+        XCTAssertFalse(HuggingFaceModelDownloader.looksLikeHTML(Data([0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00])))
         // Leading-NUL binary (e.g. coremldata.bin / weight.bin style payloads).
-        XCTAssertFalse(HuggingFaceModelDownloader.looksLikeHTML(Data([0x00, 0x00, 0x01, 0x3C, 0x68])))
+        XCTAssertFalse(HuggingFaceModelDownloader.looksLikeHTML(Data([0x00, 0x00, 0x01, 0x3c, 0x68])))
         // Empty payload.
         XCTAssertFalse(HuggingFaceModelDownloader.looksLikeHTML(Data()))
         // A stray `<` NOT followed by a markup-ish byte must not be over-rejected.
@@ -915,7 +919,7 @@ final class DictationE2ETests: XCTestCase {
 
         // A loose required file (e.g. a tokenizer) with real binary content.
         let tokenizerURL = root.appendingPathComponent("tokenizer.model")
-        try Data([0x0A, 0x09, 0x05, 0x00]).write(to: tokenizerURL)
+        try Data([0x0a, 0x09, 0x05, 0x00]).write(to: tokenizerURL)
 
         let entries = [packageName, "tokenizer.model"]
 
@@ -939,7 +943,7 @@ final class DictationE2ETests: XCTestCase {
 
         // Missing entries and an empty required directory are conservative: never flagged corrupt
         // on uncertainty (incompleteness is the existence check's concern, not this one's).
-        try Data([0x0A, 0x09, 0x05, 0x00]).write(to: tokenizerURL)
+        try Data([0x0a, 0x09, 0x05, 0x00]).write(to: tokenizerURL)
         let emptyPackage = root.appendingPathComponent("empty.mlpackage", isDirectory: true)
         try FileManager.default.createDirectory(at: emptyPackage, withIntermediateDirectories: true)
         XCTAssertFalse(

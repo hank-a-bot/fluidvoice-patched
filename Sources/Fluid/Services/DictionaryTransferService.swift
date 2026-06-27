@@ -63,11 +63,18 @@ struct DictionaryTransferReplacement: Codable, Equatable {
 
 struct DictionaryTransferDocument: Codable, Equatable {
     let replacements: [DictionaryTransferReplacement]
-    let customWords: [String]
+    let customWords: [DictionaryTransferCustomWord]
 
     init(replacements: [DictionaryTransferReplacement], customWords: [String]) {
+        self.init(
+            replacements: replacements,
+            customWordEntries: customWords.map { DictionaryTransferCustomWord(text: $0, weight: nil) }
+        )
+    }
+
+    init(replacements: [DictionaryTransferReplacement], customWordEntries: [DictionaryTransferCustomWord]) {
         self.replacements = replacements
-        self.customWords = customWords
+        self.customWords = customWordEntries
     }
 
     init(from decoder: Decoder) throws {
@@ -123,7 +130,7 @@ struct DictionaryTransferDocument: Codable, Equatable {
 
     private static func decodeCustomWords(
         from container: KeyedDecodingContainer<CodingKeys>
-    ) throws -> (found: Bool, values: [String]) {
+    ) throws -> (found: Bool, values: [DictionaryTransferCustomWord]) {
         let customWords = try Self.decodeCustomWordValues(from: container, key: .customWords)
         if customWords.found {
             return customWords
@@ -150,27 +157,48 @@ struct DictionaryTransferDocument: Codable, Equatable {
     private static func decodeCustomWordValues(
         from container: KeyedDecodingContainer<CodingKeys>,
         key: CodingKeys
-    ) throws -> (found: Bool, values: [String]) {
+    ) throws -> (found: Bool, values: [DictionaryTransferCustomWord]) {
         guard container.contains(key) else { return (false, []) }
-        return try (true, container.decode([DictionaryTransferCustomWord].self, forKey: key).map(\.text))
+        return try (true, container.decode([DictionaryTransferCustomWord].self, forKey: key))
     }
 }
 
-private struct DictionaryTransferCustomWord: Decodable {
+struct DictionaryTransferCustomWord: Codable, Equatable {
     let text: String
+    let weight: Float?
+
+    init(text: String, weight: Float?) {
+        self.text = text
+        self.weight = weight
+    }
 
     init(from decoder: Decoder) throws {
         if let text = try? decoder.singleValueContainer().decode(String.self) {
             self.text = text
+            self.weight = nil
             return
         }
 
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.text = try container.decode(String.self, forKey: .text)
+        self.weight = try container.decodeIfPresent(Float.self, forKey: .weight)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        if self.weight == nil {
+            var container = encoder.singleValueContainer()
+            try container.encode(self.text)
+            return
+        }
+
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.text, forKey: .text)
+        try container.encodeIfPresent(self.weight, forKey: .weight)
     }
 
     private enum CodingKeys: String, CodingKey {
         case text
+        case weight
     }
 }
 
@@ -212,10 +240,7 @@ final class DictionaryTransferService {
     func makeExportDocument() throws -> DictionaryTransferDocument {
         try DictionaryTransferDocument(
             replacements: SettingsStore.shared.customDictionaryEntries.compactMap(Self.exportReplacement(from:)),
-            customWords: Self.normalizedUniqueStrings(
-                ParakeetVocabularyStore.shared.loadUserBoostTerms().map(\.text),
-                lowercased: false
-            )
+            customWordEntries: Self.exportCustomWords(from: ParakeetVocabularyStore.shared.loadUserBoostTerms())
         )
     }
 
@@ -276,13 +301,13 @@ final class DictionaryTransferService {
         var customWords = mode == .replace ? [] : currentCustomWords
         for word in normalizedDocument.customWords {
             guard customWords.count < self.maxCustomWords else { break }
-            if customWords.contains(where: { $0.text.caseInsensitiveCompare(word) == .orderedSame }) {
+            if customWords.contains(where: { $0.text.caseInsensitiveCompare(word.text) == .orderedSame }) {
                 continue
             }
             customWords.append(
                 ParakeetVocabularyStore.VocabularyConfig.Term(
-                    text: word,
-                    weight: self.importedCustomWordWeight,
+                    text: word.text,
+                    weight: word.weight ?? self.importedCustomWordWeight,
                     aliases: []
                 )
             )
@@ -294,7 +319,7 @@ final class DictionaryTransferService {
     private static func normalizedDocument(_ document: DictionaryTransferDocument) -> DictionaryTransferDocument {
         DictionaryTransferDocument(
             replacements: document.replacements.compactMap(self.exportReplacement(from:)),
-            customWords: self.normalizedUniqueStrings(document.customWords, lowercased: false)
+            customWordEntries: self.exportCustomWords(from: document.customWords)
         )
     }
 
@@ -319,6 +344,33 @@ final class DictionaryTransferService {
         let to = replacement.to.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !from.isEmpty, !to.isEmpty else { return nil }
         return SettingsStore.CustomDictionaryEntry(triggers: from, replacement: to)
+    }
+
+    private static func exportCustomWords(
+        from terms: [ParakeetVocabularyStore.VocabularyConfig.Term]
+    ) -> [DictionaryTransferCustomWord] {
+        self.exportCustomWords(
+            from: terms.map { DictionaryTransferCustomWord(text: $0.text, weight: $0.weight) }
+        )
+    }
+
+    private static func exportCustomWords(
+        from words: [DictionaryTransferCustomWord]
+    ) -> [DictionaryTransferCustomWord] {
+        var seen: Set<String> = []
+        var result: [DictionaryTransferCustomWord] = []
+        result.reserveCapacity(words.count)
+
+        for word in words {
+            let text = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let key = text.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            result.append(DictionaryTransferCustomWord(text: text, weight: word.weight))
+        }
+
+        return result
     }
 
     private static func upsert(
