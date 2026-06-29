@@ -32,6 +32,12 @@ The stock app's trailing-period setting could only *remove* a final period — n
 **Fixed:** the toggle (relabeled **"Trailing Period"**) is now bidirectional — **Off** ensures your transcription ends with a period (added if the model didn't produce one; questions/exclamations are left alone), **On** strips the final period.
 *Technical: `applyGAAVFormatting` appends a period when `gaavRemoveTrailingPeriodEnabled` is off and the text ends in a letter/number.*
 
+### 5. Now inserts into apps that rejected direct typing (e.g. the Orca editor)
+Some editors — typically Electron/custom-rendered ones like the **Orca** editor — silently reject FluidVoice's direct/synthetic-keystroke insertion: the text appears to "send" but never lands, forcing you to copy-paste manually.
+
+**Fixed:** FluidVoice now auto-detects these apps and uses the reliable **clipboard-paste** path for them specifically. Every other app keeps its existing behavior, so nothing else changes. To cover another stubborn app, add its name or bundle-id substring to `forcePasteAppIdentifiers` in `TypingService.swift`.
+*Technical: `effectiveInsertionMode(preferredTargetPID:)` returns `.reliablePaste` for matched apps; the rest use the user's chosen Text Insertion Mode unchanged.*
+
 ---
 
 ## Install

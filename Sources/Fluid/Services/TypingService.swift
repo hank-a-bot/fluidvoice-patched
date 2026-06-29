@@ -59,6 +59,37 @@ final class TypingService {
         SettingsStore.shared.textInsertionMode
     }
 
+    /// Apps whose editors silently reject FluidVoice's direct/CGEvent/AX insertion (text appears
+    /// to "succeed" but never lands), so we must use the clipboard-paste path for them instead.
+    /// These are typically custom/web-rendered editors. Matched by app name or bundle id substring.
+    /// Users can paste into these apps manually, which is why automated paste works.
+    private static let forcePasteAppIdentifiers: [String] = ["orca"]
+
+    /// Returns the insertion mode to actually use for this target, forcing clipboard-paste for
+    /// known-incompatible apps (see forcePasteAppIdentifiers) while leaving every other app on the
+    /// user's chosen mode unchanged.
+    private func effectiveInsertionMode(preferredTargetPID: pid_t?) -> SettingsStore.TextInsertionMode {
+        if self.targetRequiresPaste(preferredTargetPID: preferredTargetPID) {
+            return .reliablePaste
+        }
+        return self.textInsertionMode
+    }
+
+    private func targetRequiresPaste(preferredTargetPID: pid_t?) -> Bool {
+        let app: NSRunningApplication?
+        if let pid = preferredTargetPID, pid > 0 {
+            app = NSRunningApplication(processIdentifier: pid)
+        } else {
+            app = NSWorkspace.shared.frontmostApplication
+        }
+        guard let app else { return false }
+        let name = (app.localizedName ?? "").lowercased()
+        let bundle = (app.bundleIdentifier ?? "").lowercased()
+        return Self.forcePasteAppIdentifiers.contains { id in
+            name == id || bundle.contains(id)
+        }
+    }
+
     // MARK: - Layout-aware key code lookup
 
     /// Returns the virtual key code that produces `character` under the current keyboard layout.
@@ -257,7 +288,7 @@ final class TypingService {
     /// This helps when our overlay temporarily has focus; we can still target the original app.
     func typeTextInstantly(_ text: String, preferredTargetPID: pid_t?, textReadyAt: TimeInterval?) {
         let requestedAt = ProcessInfo.processInfo.systemUptime
-        let mode = self.textInsertionMode
+        let mode = self.effectiveInsertionMode(preferredTargetPID: preferredTargetPID)
         let settleDelayMs: Int = {
             if mode == .reliablePaste {
                 return preferredTargetPID == nil ? 80 : 0
@@ -341,8 +372,8 @@ final class TypingService {
         self.log("[TypingService] insertTextInstantly called with \(text.count) characters")
         self.log("[TypingService] Attempting to type text: \"\(text.prefix(50))\(text.count > 50 ? "..." : "")\"")
 
-        if self.textInsertionMode == .reliablePaste {
-            self.log("[TypingService] Reliable Paste mode enabled")
+        if self.effectiveInsertionMode(preferredTargetPID: preferredTargetPID) == .reliablePaste {
+            self.log("[TypingService] Reliable Paste mode enabled (user setting or forced for this app)")
             if self.tryReliablePasteInsertion(text, preferredTargetPID: preferredTargetPID) {
                 self.log("[TypingService] SUCCESS: Reliable Paste mode completed")
                 return
