@@ -539,6 +539,8 @@ final class ASRService: ObservableObject {
         return created
     }
 
+    /// Tracks whether the input tap is currently installed (engine kept alive between sessions).
+    private var tapInstalled = false
     private var inputFormat: AVAudioFormat?
     private var micPermissionGranted = false
 
@@ -884,17 +886,28 @@ final class ASRService: ObservableObject {
         defer { self.isStarting = false }
 
         do {
-            DebugLogger.shared.debug("⚙️ Calling configureSession()...", source: "ASRService")
-            try self.configureSession()
-            DebugLogger.shared.debug("✅ configureSession() completed", source: "ASRService")
+            if self.canReuseRunningEngine() {
+                DebugLogger.shared.info("⚡ Reusing already-running engine — instant start", source: "ASRService")
+            } else {
+                // Tear down any stale engine so configureSession() builds a FRESH one
+                // (matches the original fresh-engine-per-start behavior on the cold path).
+                if self.engineStorage != nil {
+                    self.removeEngineTap()
+                    if self.engine.isRunning { self.engine.stop() }
+                    self.engineStorage = nil
+                }
+                DebugLogger.shared.debug("⚙️ Calling configureSession()...", source: "ASRService")
+                try self.configureSession()
+                DebugLogger.shared.debug("✅ configureSession() completed", source: "ASRService")
 
-            DebugLogger.shared.debug("🚀 Calling startEngine()...", source: "ASRService")
-            try self.startEngine()
-            DebugLogger.shared.debug("✅ startEngine() completed", source: "ASRService")
+                DebugLogger.shared.debug("🚀 Calling startEngine()...", source: "ASRService")
+                try self.startEngine()
+                DebugLogger.shared.debug("✅ startEngine() completed", source: "ASRService")
 
-            DebugLogger.shared.debug("🎧 Setting up engine tap...", source: "ASRService")
-            try self.setupEngineTap()
-            DebugLogger.shared.debug("✅ Engine tap setup complete", source: "ASRService")
+                DebugLogger.shared.debug("🎧 Setting up engine tap...", source: "ASRService")
+                try self.setupEngineTap()
+                DebugLogger.shared.debug("✅ Engine tap setup complete", source: "ASRService")
+            }
 
             // Pause system media AFTER successful audio setup but BEFORE setting isRunning
             // This ensures we only pause media when we know recording will succeed
@@ -1033,26 +1046,17 @@ final class ASRService: ObservableObject {
         self.stopMonitoringDevice()
         DebugLogger.shared.debug("✅ Device monitoring stopped", source: "ASRService")
 
-        // Stop the audio engine to stop new audio from coming in
-        DebugLogger.shared.debug("🎧 Removing engine tap...", source: "ASRService")
-        self.removeEngineTap()
-        DebugLogger.shared.debug("✅ Engine tap removed", source: "ASRService")
-
-        DebugLogger.shared.debug("🛑 Calling engine.stop()...", source: "ASRService")
-        self.engine.stop()
-        DebugLogger.shared.debug("✅ Engine stopped", source: "ASRService")
+        // ZERO-LATENCY: keep the engine + tap RUNNING between sessions so the next start is
+        // instant. Capture was already gated off above (setRecordingEnabled(false)), so the live
+        // tap simply drops buffers while idle — nothing is recorded until the next start. We do
+        // NOT stop()/teardown here: rebuilding a fresh engine per start re-acquired the input
+        // device and produced a dead/silent stream. The same proven-good engine is reused.
+        DebugLogger.shared.debug("🎧 Keeping engine warm (capture gated off) for instant restart", source: "ASRService")
 
         // Capture has fully ended — invoke the callback so callers can play a
         // stop cue or release capture-dependent UI without waiting on the
         // (potentially slow) final transcription pass.
         await MainActor.run { onCaptureStopped?() }
-
-        // Recreate the engine instance instead of calling reset() to prevent format corruption
-        // VoiceInk approach: tearing down and rebuilding ensures fresh, valid audio format on restart
-        DebugLogger.shared.debug("🗑️ Deallocating old engine and creating fresh instance...", source: "ASRService")
-        self.engineStorage = nil // Explicitly release old engine
-        // New engine will be lazily created on next access via computed property
-        DebugLogger.shared.debug("✅ Engine instance recreated", source: "ASRService")
 
         // CRITICAL FIX: Await completion of streaming task AND any pending transcriptions
         // This prevents use-after-free crashes (EXC_BAD_ACCESS) when clearing buffer
@@ -1326,20 +1330,9 @@ final class ASRService: ObservableObject {
         // Stop monitoring device
         self.stopMonitoringDevice()
 
-        self.removeEngineTap()
-        DebugLogger.shared.debug("Engine tap removed", source: "ASRService")
-
-        self.engine.stop()
-        DebugLogger.shared.debug("Engine stopped", source: "ASRService")
-
-        // Release old engine on a background thread — if the underlying device just died,
-        // AVAudioEngine deallocation can block in CoreAudio's internal teardown.
-        // No new engine is created here (it's lazy on next start()), so no overlap risk.
-        let oldEngine = self.engineStorage
-        self.engineStorage = nil
-        if let oldEngine {
-            DispatchQueue.global(qos: .utility).async { _ = oldEngine }
-        }
+        // ZERO-LATENCY: keep the engine + tap running (capture already gated off above) so the
+        // next start is instant. Do NOT stop()/release the engine — see stop() for rationale.
+        DebugLogger.shared.debug("Keeping engine warm (capture gated off) after abort", source: "ASRService")
 
         // CRITICAL FIX: Await completion of streaming task AND any pending transcriptions
         // This prevents use-after-free crashes (EXC_BAD_ACCESS) when clearing buffer
@@ -1703,6 +1696,27 @@ final class ASRService: ObservableObject {
         }
     }
 
+    /// True when the continuously-running engine is still valid to record from right now: it
+    /// exists, is running, has a live tap + valid input format, and is still bound to the device
+    /// we intend to capture from (guards against the user changing audio devices while idle).
+    private func canReuseRunningEngine() -> Bool {
+        guard self.engineStorage != nil, self.tapInstalled, self.engine.isRunning else { return false }
+        let fmt = self.engine.inputNode.inputFormat(forBus: 0)
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return false }
+        return self.boundInputMatchesIntendedDevice()
+    }
+
+    private func boundInputMatchesIntendedDevice() -> Bool {
+        let intendedUID: String?
+        if SettingsStore.shared.syncAudioDevicesWithSystem {
+            intendedUID = AudioDevice.getDefaultInputDevice()?.uid
+        } else {
+            intendedUID = SettingsStore.shared.preferredInputDeviceUID ?? AudioDevice.getDefaultInputDevice()?.uid
+        }
+        guard let intendedUID, intendedUID.isEmpty == false else { return true }
+        return self.getCurrentlyBoundInputDevice()?.uid == intendedUID
+    }
+
     private func startEngine() throws {
         DebugLogger.shared.debug("🚀 startEngine() - ENTERED", source: "ASRService")
         var attempts = 0
@@ -1791,6 +1805,7 @@ final class ASRService: ObservableObject {
 
     private func removeEngineTap() {
         self.engine.inputNode.removeTap(onBus: 0)
+        self.tapInstalled = false
     }
 
     private func setupEngineTap() throws {
@@ -1851,6 +1866,7 @@ final class ASRService: ObservableObject {
         input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { buffer, _ in
             pipeline.handle(buffer: buffer)
         }
+        self.tapInstalled = true
         DebugLogger.shared.debug("✅ setupEngineTap() - COMPLETED", source: "ASRService")
     }
 

@@ -31,87 +31,15 @@ final class MediaPlaybackService {
     ///   crash with `EXC_BREAKPOINT` (SIGTRAP) due to double-resume of a
     ///   `CheckedContinuation`.
     func pauseIfPlaying() async -> Bool {
-        return await withCheckedContinuation { continuation in
-            let resumeLock = NSLock()
-            var didResume = false
-
-            func resumeOnce(_ value: Bool) {
-                var shouldResume = false
-
-                resumeLock.lock()
-                if !didResume {
-                    didResume = true
-                    shouldResume = true
-                }
-                resumeLock.unlock()
-
-                guard shouldResume else {
-                    DebugLogger.shared.warning(
-                        "MediaPlaybackService: Suppressed duplicate resume (MediaRemoteAdapter callback fired more than once)",
-                        source: "MediaPlaybackService"
-                    )
-                    return
-                }
-
-                continuation.resume(returning: value)
-            }
-
-            self.mediaController.getTrackInfo { [weak self] trackInfo in
-                guard let self = self else {
-                    resumeOnce(false)
-                    return
-                }
-
-                // If no track info is available, nothing is playing
-                guard let trackInfo = trackInfo else {
-                    DebugLogger.shared.debug(
-                        "MediaPlaybackService: No track info available, nothing to pause",
-                        source: "MediaPlaybackService"
-                    )
-                    resumeOnce(false)
-                    return
-                }
-
-                // Determine if media is currently playing
-                // Use isPlaying if available, otherwise check playbackRate
-                let isPlaying: Bool
-                if let playing = trackInfo.payload.isPlaying {
-                    isPlaying = playing
-                } else {
-                    // playbackRate of 1.0 typically means playing, 0.0 means paused
-                    isPlaying = (trackInfo.payload.playbackRate ?? 0.0) > 0.0
-                }
-
-                // Log what we found
-                DebugLogger.shared.debug(
-                    """
-                    MediaPlaybackService: Track info received
-                    - App: \(trackInfo.payload.applicationName ?? "Unknown")
-                    - Bundle: \(trackInfo.payload.bundleIdentifier ?? "Unknown")
-                    - Title: \(trackInfo.payload.title ?? "Unknown")
-                    - isPlaying: \(trackInfo.payload.isPlaying?.description ?? "nil")
-                    - playbackRate: \(trackInfo.payload.playbackRate?.description ?? "nil")
-                    - Determined playing: \(isPlaying)
-                    """,
-                    source: "MediaPlaybackService"
-                )
-
-                if isPlaying {
-                    DebugLogger.shared.info(
-                        "MediaPlaybackService: Media is playing, sending pause command",
-                        source: "MediaPlaybackService"
-                    )
-                    self.mediaController.pause()
-                    resumeOnce(true)
-                } else {
-                    DebugLogger.shared.debug(
-                        "MediaPlaybackService: Media is not playing, no action needed",
-                        source: "MediaPlaybackService"
-                    )
-                    resumeOnce(false)
-                }
-            }
-        }
+        // Media auto-pause during dictation is intentionally DISABLED.
+        // We never pause the user's currently-playing audio (podcast/music/etc.)
+        // just because they started dictating. Returning false means
+        // resumeIfWePaused(_:) is always a no-op as well.
+        DebugLogger.shared.debug(
+            "MediaPlaybackService: Auto-pause disabled, leaving media playback untouched",
+            source: "MediaPlaybackService"
+        )
+        return false
     }
 
     /// Resumes media playback only if we were the ones who paused it.
