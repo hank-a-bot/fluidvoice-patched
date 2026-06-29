@@ -26,6 +26,12 @@ The stock app's audio engine opened an **output** device every time it recorded 
 **Fixed:** the recording engine is now **input-only** — its output side is disabled, so it never opens a speaker/output device and never grabs your headphones. Your phone keeps playing.
 *Technical: `disableEngineOutput()` sets `kAudioOutputUnitProperty_EnableIO = 0` on the output scope of the engine's audio unit before start. FluidVoice only ever taps the input node and never routes anything to output, so the output side was dead weight.*
 
+### 4. The trailing-punctuation toggle now actually works
+The stock app's trailing-period setting could only *remove* a final period — never *add* one — so if your speech model didn't end a sentence with a period, the toggle appeared to do nothing.
+
+**Fixed:** the toggle (relabeled **"Trailing Period"**) is now bidirectional — **Off** ensures your transcription ends with a period (added if the model didn't produce one; questions/exclamations are left alone), **On** strips the final period.
+*Technical: `applyGAAVFormatting` appends a period when `gaavRemoveTrailingPeriodEnabled` is off and the text ends in a letter/number.*
+
 ---
 
 ## Install

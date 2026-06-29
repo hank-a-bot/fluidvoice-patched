@@ -899,8 +899,8 @@ struct SettingsView: View {
                                     Divider().opacity(0.2)
 
                                     self.optionToggleRow(
-                                        title: "Remove Trailing Period",
-                                        description: "Drop a final period from transcriptions. Feature requested by MaxGaav.",
+                                        title: "Trailing Period",
+                                        description: "Off (default): ensure transcriptions end with a period (added if the model didn't produce one). On: drop the final period instead.",
                                         isOn: Binding(
                                             get: { SettingsStore.shared.gaavRemoveTrailingPeriodEnabled },
                                             set: { SettingsStore.shared.gaavRemoveTrailingPeriodEnabled = $0 }

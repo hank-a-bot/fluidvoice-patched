@@ -3049,8 +3049,16 @@ final class ASRService: ObservableObject {
 
         var result = text
 
-        if SettingsStore.shared.gaavRemoveTrailingPeriodEnabled, result.hasSuffix(".") {
-            result.removeLast()
+        if SettingsStore.shared.gaavRemoveTrailingPeriodEnabled {
+            // Toggle ON: strip a final period.
+            if result.hasSuffix(".") {
+                result.removeLast()
+            }
+        } else if let last = result.last, last.isLetter || last.isNumber {
+            // Toggle OFF (default): ensure trailing punctuation. Add a period only when the
+            // text ends in a letter/number — i.e. the model produced no terminal punctuation.
+            // If it already ends in "." "!" "?" (or any other punctuation), leave it untouched.
+            result += "."
         }
 
         if SettingsStore.shared.gaavLowercaseFirstLetterEnabled, let first = result.first, first.isUppercase {
