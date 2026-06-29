@@ -1717,6 +1717,31 @@ final class ASRService: ObservableObject {
         return self.getCurrentlyBoundInputDevice()?.uid == intendedUID
     }
 
+    /// Disables the OUTPUT side of the engine's audio unit so the engine is INPUT-ONLY and never
+    /// opens a speaker/output device. A dictation app produces no audio; opening an output device
+    /// is what steals multipoint Bluetooth headphones (AirPods/QC35) off a phone. Must run before
+    /// engine.prepare()/start() (i.e. before AudioUnit initialization).
+    private func disableEngineOutput() {
+        guard let audioUnit = self.engine.outputNode.audioUnit else {
+            DebugLogger.shared.warning("No output AudioUnit available; cannot disable output IO", source: "ASRService")
+            return
+        }
+        var disable: UInt32 = 0
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_EnableIO,
+            kAudioUnitScope_Output,
+            0,
+            &disable,
+            UInt32(MemoryLayout<UInt32>.size)
+        )
+        if status == noErr {
+            DebugLogger.shared.info("🔇 Disabled engine OUTPUT IO — recording is input-only, won't open any output device", source: "ASRService")
+        } else {
+            DebugLogger.shared.warning("Could not disable output IO (OSStatus \(status)); engine may still open an output device", source: "ASRService")
+        }
+    }
+
     private func startEngine() throws {
         DebugLogger.shared.debug("🚀 startEngine() - ENTERED", source: "ASRService")
         var attempts = 0
@@ -1731,14 +1756,15 @@ final class ASRService: ObservableObject {
                 let inputBindOk = self.bindPreferredInputDeviceIfNeeded()
                 DebugLogger.shared.debug("✅ Input device binding result: \(inputBindOk)", source: "ASRService")
 
-                DebugLogger.shared.debug("🔊 Binding output device (before prepare)...", source: "ASRService")
-                let outputBindOk = self.bindPreferredOutputDeviceIfNeeded()
-                DebugLogger.shared.debug("✅ Output device binding result: \(outputBindOk)", source: "ASRService")
+                // A dictation app only needs INPUT. Disable the engine's OUTPUT side so recording
+                // never opens a speaker/output device — that activation is what was grabbing
+                // multipoint Bluetooth headphones off the phone. We do NOT bind/open any output.
+                self.disableEngineOutput()
 
-                // If binding failed (e.g., aggregate device), engine will use system defaults
-                if !inputBindOk || !outputBindOk {
+                // If input binding failed (e.g., aggregate device), engine uses system default input.
+                if !inputBindOk {
                     DebugLogger.shared.info(
-                        "⚠️ Device binding failed (likely aggregate device). Engine will use system default devices.",
+                        "⚠️ Input device binding failed (likely aggregate device). Engine will use system default input.",
                         source: "ASRService"
                     )
                 }

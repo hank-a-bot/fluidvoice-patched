@@ -20,6 +20,12 @@ The stock app rebuilt its **entire audio engine from scratch on every hotkey pre
 **Fixed:** the audio engine now stays warm between dictations and the hotkey simply opens a capture gate. The **first** dictation after launch is normal speed; **every one after it is instant.** Nothing is recorded while idle (the mic indicator stays lit, but audio is discarded until you press the key).
 *Technical: `ASRService` keeps the same running `AVAudioEngine` + input tap alive across sessions instead of tearing it down and re-acquiring the input device each time.*
 
+### 3. It hijacked your Bluetooth headphones (AirPods/etc.) while dictating
+The stock app's audio engine opened an **output** device every time it recorded — even though a dictation app produces no sound. If that output was a Bluetooth headset connected to both your Mac and your phone (multipoint), *opening* it yanked the headset over to the Mac and paused your phone's audio.
+
+**Fixed:** the recording engine is now **input-only** — its output side is disabled, so it never opens a speaker/output device and never grabs your headphones. Your phone keeps playing.
+*Technical: `disableEngineOutput()` sets `kAudioOutputUnitProperty_EnableIO = 0` on the output scope of the engine's audio unit before start. FluidVoice only ever taps the input node and never routes anything to output, so the output side was dead weight.*
+
 ---
 
 ## Install
