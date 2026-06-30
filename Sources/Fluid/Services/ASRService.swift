@@ -3044,7 +3044,24 @@ final class ASRService: ObservableObject {
     /// This is useful for search queries, form fields, or casual text input.
     ///
     /// Feature requested by maxgaav – thank you for the suggestion!
-    static func applyGAAVFormatting(_ text: String) -> String {
+    /// Question words / leading auxiliaries that, when a transcription starts with them, indicate
+    /// a question — used to choose "?" over "." when adding terminal punctuation (no AI involved).
+    private static let questionLeadWords: Set<String> = [
+        "what", "why", "how", "when", "where", "who", "whom", "whose", "which",
+        "is", "are", "am", "was", "were", "do", "does", "did", "can", "could",
+        "will", "would", "shall", "should", "may", "might", "have", "has", "had",
+    ]
+
+    /// Heuristic: true if the text reads like a question based on its first word. Catches wh-questions
+    /// ("what time is it") and yes/no questions ("is this working now"). Misses declarative-form
+    /// questions ("you're coming?"), which are rare in dictation.
+    static func looksLikeQuestion(_ text: String) -> Bool {
+        guard let firstToken = text.split(whereSeparator: { $0.isWhitespace }).first else { return false }
+        let word = firstToken.lowercased().trimmingCharacters(in: CharacterSet.punctuationCharacters)
+        return self.questionLeadWords.contains(word)
+    }
+
+    static func applyGAAVFormatting(_ text: String, aiHandledPunctuation: Bool = false) -> String {
         guard !text.isEmpty else { return text }
 
         var result = text
@@ -3054,11 +3071,12 @@ final class ASRService: ObservableObject {
             if result.hasSuffix(".") {
                 result.removeLast()
             }
-        } else if let last = result.last, last.isLetter || last.isNumber {
-            // Toggle OFF (default): ensure trailing punctuation. Add a period only when the
-            // text ends in a letter/number — i.e. the model produced no terminal punctuation.
-            // If it already ends in "." "!" "?" (or any other punctuation), leave it untouched.
-            result += "."
+        } else if aiHandledPunctuation == false, let last = result.last, last.isLetter || last.isNumber {
+            // Toggle OFF (default): ensure trailing punctuation when AI Enhancement did NOT run.
+            // Deterministically pick "?" for likely questions (wh-word or leading auxiliary/modal),
+            // otherwise ".". This never rewrites or answers — it only appends one character.
+            // (When AI is on we skip this and trust the AI's punctuation.)
+            result += Self.looksLikeQuestion(result) ? "?" : "."
         }
 
         if SettingsStore.shared.gaavLowercaseFirstLetterEnabled, let first = result.first, first.isUppercase {

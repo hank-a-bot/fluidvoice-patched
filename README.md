@@ -38,6 +38,12 @@ Some editors — typically Electron/custom-rendered ones like the **Orca** edito
 **Fixed:** FluidVoice now auto-detects these apps and uses the reliable **clipboard-paste** path for them specifically. Every other app keeps its existing behavior, so nothing else changes. To cover another stubborn app, add its name or bundle-id substring to `forcePasteAppIdentifiers` in `TypingService.swift`.
 *Technical: `effectiveInsertionMode(preferredTargetPID:)` returns `.reliablePaste` for matched apps; the rest use the user's chosen Text Insertion Mode unchanged.*
 
+### 6. Correct end punctuation (`?` for questions) — and AI can't hijack it
+The earlier trailing-period fix always added a `.`, even to questions. Now, when AI Enhancement is **off**, FluidVoice deterministically picks `?` for questions (sentence starts with a wh-word or a leading auxiliary like *is/are/do/can/would…*) and `.` otherwise — pure text, never rewritten. When AI Enhancement is **on**, it defers to the AI's own punctuation.
+
+> Note: AI Enhancement is *generative* — it can rewrite, answer, or even refuse your dictation. For verbatim dictation, keep it **off** or scoped to **"Selected apps only."** This fork's deterministic punctuation gives you correct `?`/`.` without that risk.
+*Technical: `applyGAAVFormatting(_, aiHandledPunctuation:)` uses `looksLikeQuestion(_)` to choose the terminal mark, and skips its own punctuation entirely when AI handled it.*
+
 ---
 
 ## Install

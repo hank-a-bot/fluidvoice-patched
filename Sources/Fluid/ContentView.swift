@@ -2090,7 +2090,7 @@ struct ContentView: View {
 
             do {
                 let result = try await self.processTextWithAI(transcribedText, overrideSystemPrompt: promptTest.draftPromptText)
-                promptTest.lastOutputText = ASRService.applyGAAVFormatting(result)
+                promptTest.lastOutputText = ASRService.applyGAAVFormatting(result, aiHandledPunctuation: true)
             } catch {
                 DebugLogger.shared.error("Prompt test AI call failed: \(error.localizedDescription)", source: "ContentView")
                 promptTest.lastError = error.localizedDescription
@@ -2212,7 +2212,7 @@ struct ContentView: View {
 
         // Apply GAAV formatting as the FINAL step (after AI post-processing)
         // This ensures the user's preference for no capitalization/period is respected
-        finalText = ASRService.applyGAAVFormatting(finalText)
+        finalText = ASRService.applyGAAVFormatting(finalText, aiHandledPunctuation: shouldUseAI)
         // Apply Continuous Dictation Mode after GAAV so smart caps use the field
         // context captured at recording start, and the trailing space enables chaining.
         finalText = ASRService.applyContinuousDictationFormatting(finalText, precedingText: self.recordingPrecedingText)
@@ -2509,7 +2509,7 @@ struct ContentView: View {
             self.cancelPrewarmDictationIfNeeded()
         }
 
-        let gaavText = ASRService.applyGAAVFormatting(text)
+        let gaavText = ASRService.applyGAAVFormatting(text, aiHandledPunctuation: true)
         let precedingText = SettingsStore.shared.needsDictationFormattingContext
             ? TypingService.textBeforeCursorInFocusedField()
             : ""
@@ -2591,7 +2591,7 @@ struct ContentView: View {
         NotchOverlayManager.shared.updateTranscriptionText("")
         self.menuBarManager.setProcessing(false)
 
-        finalText = ASRService.applyGAAVFormatting(finalText)
+        finalText = ASRService.applyGAAVFormatting(finalText, aiHandledPunctuation: shouldUseAI)
         let precedingText = SettingsStore.shared.needsDictationFormattingContext
             ? TypingService.textBeforeCursorInFocusedField()
             : ""
